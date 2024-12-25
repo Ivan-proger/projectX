@@ -1,0 +1,11 @@
+.env
+.vscode
+venv
+
+postgres
+rabbitmq
+txt_files
+
+celerybeat-schedule
+
+worker
