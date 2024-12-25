@@ -55,10 +55,13 @@ def register_handlers(bot: AsyncTeleBot):
 
     #* Обработчик просто сообщений
     async def pass_function(message: types.Message, bot: AsyncTeleBot):
-        if await update_activity(message.from_user.id):
+        user = await update_activity(message.from_user.id)
+        if user:
             state = await get_user_state(message.from_user.id)
             if not state:
                 await echo_handler(message, bot)
+            elif state == 'comment':
+                await comment_send(message, bot, user)
             elif state == 'add_channel_img_chat':
                 await add_channel_img_chat_chat(message, bot)
             elif state == 'add_channel_description_chat':
@@ -84,10 +87,16 @@ def register_handlers(bot: AsyncTeleBot):
             if call.data.startswith("dislike_post+"):
                 await callback_dislike(call, bot, user)
             elif call.data.startswith("like_post+"):
-                await callback_like(call, bot, user)                
+                await callback_like(call, bot, user) 
+
+            # Статус 'comment'
+            elif call.data.startswith('comment_post+'):   
+                await  comment_status(call, bot)
+
             # Лента из кнопки
             elif call.data == "callback_feed_start":
                 await callback_feed_start(call, bot, user)
+
             # Добавить тгк начала из /start
             elif call.data == "add_channel_start":
                 await callback_add_channel_start(call, bot)

@@ -19,6 +19,7 @@ from mainBot.models import * # импорт всех моделей Django
 from mainBot.telegram.bot import set_user_state, get_message_text, anketa_text
 from mainBot.telegram.keyboards import *
 from mainBot.telegram.geo_utils import geocode
+from mainBot.telegram.handlers.adding_profile import stop_action
 
 
 # Закодирование id канала чтобы нельзя было подсмотреть через кнопку 
@@ -176,12 +177,12 @@ async def callback_dislike(call: types.CallbackQuery, bot: AsyncTeleBot, user: U
 # Like:
 async def callback_like(call: types.CallbackQuery, bot: AsyncTeleBot, user: User = None):
     """ call.data.startswith("like_post-") """
+
     hash_code = call.data.split('+')[1]
     channel_id = await decode_base62(hash_code)
 
     # Обновляем
     await Channel.objects.filter(external_id=channel_id).aupdate(likes=F("likes") + 1)
-
 
     keyboard = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton(
@@ -197,3 +198,88 @@ async def callback_like(call: types.CallbackQuery, bot: AsyncTeleBot, user: User
     )    
 
     await recommendations_feed(call.message, bot, call.from_user.id, user)
+
+# Отвечаем на коммент
+async def comment_status(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """ call.data.starstwith('comment_post+') """
+
+    msg = await bot.send_message(
+        call.message.chat.id,
+        await get_message_text('general', 'comment_status'),
+        reply_markup=await stop_message(),
+        parse_mode='HTML'
+    )
+    hash_code = call.data.split("+")[1]
+    # Ставим в кэш наш код канала
+    await cache.aset(f'{call.from_user.id}-comment-tg', hash_code, 30*60)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id], 30*60)
+    await set_user_state(call.from_user.id, 'comment')
+
+    keyboard = types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton(
+            "Ссылка", 
+            url=f't.me/{(await bot.get_chat(await decode_base62(hash_code))).username}'
+            )
+    )
+    # Убираем клавиатуру чтобы больше не нажимал
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup=keyboard
+    )       
+
+async def comment_send(message: types.Message, bot: AsyncTeleBot, user: User = None):
+    """ status == 'comment' """
+    # Если пользователь хочет выйти
+    if await stop_action(message, bot):
+        await bot.delete_messages(
+            message.chat.id, 
+            await cache.aget(f'{message.from_user.id}-id_botmessage') + [message.id]
+            ) 
+        cache.delete(f'{message.from_user.id}-id_botmessage')
+        cache.delete(f'{message.from_user.id}-comment-tg')
+        await set_user_state(message.from_user.id, None)
+ 
+        return True
+    
+    hash_code = await cache.aget(f'{message.from_user.id}-comment-tg')
+    if not hash_code: # Пользователь чебурек
+        await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'not_found_cache'), 
+            parse_mode='HTML'
+            )
+        await set_user_state(message.from_user.id, None)
+        return True   
+
+    # Проверка длины текста
+    if len(message.text) > 512:
+        msg = await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'limit_simvols'), 
+            parse_mode='HTML'
+        )      
+        await cache.aset(
+            f'{message.from_user.id}-id_botmessage', 
+            await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id]
+        )        
+        return True
+        
+    ch = await Channel.objects.aget(external_id=await decode_base62(hash_code))
+    if not user or user == True: # Запросы к бд
+        user = await User.objects.aget(external_id=message.from_user.id)
+    await Comment.objects.acreate(
+        user_id=user.id,
+        channel_id=ch.id,
+        text=message.text,
+        is_viewed=False
+    )          
+    await bot.send_message(
+            message.chat.id, 
+            await get_message_text('general', 'coment_complite'), 
+            reply_to_message_id=message.id,
+            parse_mode='HTML'
+        )  
+    await set_user_state(message.from_user.id, None)
+    # Мотаем ленту дальше
+    await recommendations_feed(message, bot, message.from_user.id, user)    
