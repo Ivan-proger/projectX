@@ -120,8 +120,6 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
         # Сохраняем в кэш список рекомендаций     
         await cache.aset(f'{user_id}-recommendations', recommendations, 60*60)
 
-
-
     # Берем канал для отправки
     channel = recommendations[0]
     # Удаялем
@@ -152,7 +150,8 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
         caption,
         message.chat.id,
         msg[0].id,
-        reply_markup=(await keyboard_post(await encode_base62(channel.external_id))),
+        reply_markup=(await keyboard_post(await encode_base62(channel.external_id), 
+                                          await encode_base62(channel.id))),
         parse_mode='HTML'
     )
 
@@ -209,7 +208,7 @@ async def comment_status(call: types.CallbackQuery, bot: AsyncTeleBot):
         reply_markup=await stop_message(),
         parse_mode='HTML'
     )
-    hash_code = call.data.split("+")[1]
+    hash_code = call.data.split("+")[2]
     # Ставим в кэш наш код канала
     await cache.aset(f'{call.from_user.id}-comment-tg', hash_code, 30*60)
     await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id], 30*60)
@@ -218,7 +217,7 @@ async def comment_status(call: types.CallbackQuery, bot: AsyncTeleBot):
     keyboard = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton(
             "Ссылка", 
-            url=f't.me/{(await bot.get_chat(await decode_base62(hash_code))).username}'
+            url=f't.me/{(await bot.get_chat(await decode_base62(call.data.split("+")[1]))).username}'
             )
     )
     # Убираем клавиатуру чтобы больше не нажимал
@@ -265,12 +264,11 @@ async def comment_send(message: types.Message, bot: AsyncTeleBot, user: User = N
         )        
         return True
         
-    ch = await Channel.objects.aget(external_id=await decode_base62(hash_code))
     if not user or user == True: # Запросы к бд
         user = await User.objects.aget(external_id=message.from_user.id)
     await Comment.objects.acreate(
         user_id=user.id,
-        channel_id=ch.id,
+        channel_id=await decode_base62(hash_code),
         text=message.text,
         is_viewed=False
     )          
@@ -283,3 +281,67 @@ async def comment_send(message: types.Message, bot: AsyncTeleBot, user: User = N
     await set_user_state(message.from_user.id, None)
     # Мотаем ленту дальше
     await recommendations_feed(message, bot, message.from_user.id, user)    
+
+# Выложить список жалоб
+async def complite_category_collback(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """ Список все категорий для жалобы """
+
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup=await complite_tags_keybord(call.data.split("+")[1], call.data.split("+")[2])
+        )    
+
+# Назад в оценку
+async def feed_back_collback(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """ back """
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup=await keyboard_post(call.data.split(":")[1], call.data.split(":")[1])
+        )
+# Реакция на выбранную категорию для жалобы    
+async def complite_category_choice(call: types.CallbackQuery, bot: AsyncTeleBot):
+    """
+    call.data == 'complite_tags:{cp.id}:{hash}:{hash_id_channel}' 
+    """
+    item_id = call.data.split(":")[1]
+    hash = call.data.split(":")[2]
+    hash_id_channel = call.data.split(":")[3]
+
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup= await complite_tags_keybord_finish(item_id, hash, hash_id_channel)
+        )        
+    
+#! Финальное добавление жалобы в бд    
+async def complite_category_complite(call: types.CallbackQuery, bot: AsyncTeleBot, user: User=None): 
+    """
+    call.data = f'tags_complite:{item_id}:{hash}:{hash_id_channel}'
+    """   
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup= None
+        )     
+
+    hash_code = call.data.split(':')[2]
+    item_id = call.data.split(':')[1]
+    hash_id_channel = call.data.split(":")[3]
+
+    if not user or user == True: # Запросы к бд
+        user = await User.objects.aget(external_id=call.from_user.id)
+    await Complaint.objects.acreate(
+        user_id=user.id,
+        channel_id=await decode_base62(hash_id_channel),
+        category_id=item_id,
+        is_viewed=False
+    ) 
+
+    await bot.answer_callback_query(  # Отчет
+        call.id,
+        await get_message_text('general', 'coment_complite')
+        )
+    
+    await recommendations_feed(call.message, bot, call.from_user.id, user) 

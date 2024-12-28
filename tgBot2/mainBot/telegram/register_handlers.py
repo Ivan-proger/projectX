@@ -93,6 +93,18 @@ def register_handlers(bot: AsyncTeleBot):
             elif call.data.startswith('comment_post+'):   
                 await  comment_status(call, bot)
 
+            # Отправить жалобу
+            elif call.data.startswith("complaint_post+"):
+                await complite_category_collback(call, bot)
+            elif call.data.startswith("complite_tags:"): # Реакцию на кнопку только
+                await complite_category_choice(call, bot)
+            elif call.data.startswith("tags_complite:"): # Финал
+                await complite_category_complite(call, bot, user)
+
+            # Кнопка назад в оценку анкеты
+            elif call.data.startswith('feed_back'):
+                await feed_back_collback(call, bot)    
+
             # Лента из кнопки
             elif call.data == "callback_feed_start":
                 await callback_feed_start(call, bot, user)

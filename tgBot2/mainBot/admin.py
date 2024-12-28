@@ -25,8 +25,8 @@ class CommentsAdmin(admin.ModelAdmin):
 
 @admin.register(Complaint)
 class ComplaintsAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "channel", "user")
-    search_fields = ("channel", "user", "text")
+    list_display = ("category" ,"created_at", "channel", "user")
+    search_fields = ("category", "channel", "user", "text")
     list_filter = ("is_viewed", )
 
 @admin.register(СategoryComplaint)

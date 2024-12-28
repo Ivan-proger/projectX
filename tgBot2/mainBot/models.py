@@ -115,7 +115,6 @@ class Complaint(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='Пожаловлся')
     channel = models.ForeignKey(Channel, on_delete=models.CASCADE, related_name='Жалобы')
     category = models.ForeignKey(СategoryComplaint, on_delete=models.CASCADE, related_name='Категория')
-    text = models.CharField(max_length=512, verbose_name="Содержание")
     is_viewed = models.BooleanField(default=False, verbose_name="Просмотрено")
     created_at = models.DateTimeField(auto_now_add=True)
 

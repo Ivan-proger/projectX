@@ -1,4 +1,7 @@
 from telebot import types
+from mainBot.models import СategoryComplaint
+from django.core.cache import cache
+from django.conf import settings
 from .bot import get_user_state, set_user_state, get_message_text, anketa_text
 
 
@@ -118,7 +121,7 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
     return keyboard
 
 # Клаиатура для ленты
-async def keyboard_post(hash):
+async def keyboard_post(hash, hash_id_channel):
     """
     Клавиатура для поста в ленте
     """
@@ -126,11 +129,54 @@ async def keyboard_post(hash):
         # Лайка
         types.InlineKeyboardButton("💖", callback_data=f'like_post+{hash}'),
         # Коментарий                           
-        types.InlineKeyboardButton("💬", callback_data=f'comment_post+{hash}'),
+        types.InlineKeyboardButton("💬", callback_data=f'comment_post+{hash}+{hash_id_channel}'),
         # Дизлайк                           
         types.InlineKeyboardButton("👎", callback_data=f'dislike_post+{hash}'),                                   
         # Жалоба
-        types.InlineKeyboardButton("⚠️", callback_data=f'complaint_post+{hash}'),         
+        types.InlineKeyboardButton("⚠️", callback_data=f'complaint_post+{hash}+{hash_id_channel}'),         
     ) 
 
     return keyboard 
+
+# Клава жалоб
+async def complite_tags_keybord(hash, hash_id_channel):
+    """
+    Список аргументов для жалобы
+    """
+    keyboard = await cache.aget('complite_tags_keybord')
+    if not keyboard:
+        keyboard = types.InlineKeyboardMarkup()
+        async for cp in СategoryComplaint.objects.all():
+            keyboard.add(types.InlineKeyboardButton(cp.name, callback_data=f'complite_tags:{cp.id}:{hash}:{hash_id_channel}'))
+
+        keyboard.row(
+            types.InlineKeyboardButton(
+                await get_message_text('keyboards', 'add_channel_back'),
+                callback_data=f'feed_back:{hash}:{hash_id_channel}'
+            ),            
+        )
+        await cache.aset('complite_tags_keybord', keyboard, 1 if settings.DEBUG else None)
+    return keyboard
+
+async def complite_tags_keybord_finish(item_id, hash, hash_id_channel):
+    """ Подтверждение перед жалобой """
+
+    keyboard = types.InlineKeyboardMarkup()
+    item = await cache.aget(f'{item_id}-tags_keybord')
+    if not item:
+        item = await СategoryComplaint.objects.aget(id=int(item_id))
+        await cache.aset(f'{item_id}-tags_keybord', item, 1 if settings.DEBUG else None)
+
+    keyboard.row(types.InlineKeyboardButton(f'{item.name}', callback_data='trash123'))    
+    keyboard.row(
+        types.InlineKeyboardButton(
+            await get_message_text('keyboards', 'add_channel_back'),
+            callback_data=f'feed_back:{hash}:{hash_id_channel}'
+        ),            
+        types.InlineKeyboardButton(
+            await get_message_text('keyboards', 'add_channel_complite'),
+            callback_data=f'tags_complite:{item_id}:{hash}:{hash_id_channel}'
+        )
+
+        )        
+    return keyboard
