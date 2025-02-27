@@ -1,5 +1,6 @@
+from ast import List
 from telebot import types
-from mainBot.models import СategoryComplaint
+from mainBot.models import СategoryComplaint, Channel
 from django.core.cache import cache
 from django.conf import settings
 from .bot import get_user_state, set_user_state, get_message_text, anketa_text
@@ -20,11 +21,34 @@ async def stop_message():
         types.InlineKeyboardButton(await get_message_text("absolute_messages", "stop")))
 
 #* Клавиатура для редактирования канала 
-async def keyboard_add_chennal():
-    keyboard = types.InlineKeyboardMarkup(row_width=2).add( 
+async def keyboard_add_chennal(user_id=None):
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+
+    if user_id:
+        id_imgs = await cache.aget(f'{user_id}-id_imgs')
+        if id_imgs:
+            buttons = []
+            for i in range(len(id_imgs)):
+                buttons.append(types.InlineKeyboardButton(
+                        f'{i+1}', callback_data=f'add_imgs:{i}'
+                    )
+                )
+            keyboard.row(*buttons)
+            # Удалить второстепенные фото
+            keyboard.add(
+                types.InlineKeyboardButton(
+                    await get_message_text('keyboards', 'add_channel_delete_imgs'), 
+                    callback_data='add_channel_delete_imgs'
+                    )
+                )
+    
+    keyboard.add( 
         # Добавить фото
         types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_img_chat'), 
                                    callback_data='add_channel_img_chat'),
+        # Добавить еще фото
+        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_more_img'), 
+                                   callback_data='add_channel_more_img'),                                   
         # Добавить описание                           
         types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_description_chat'), 
                                    callback_data='add_channel_description_chat'),
@@ -62,11 +86,11 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
     """
     Генерация inline-клавиатуры с пагинацией.
     
-    -items: Список объектов.
-    -page: Номер текущей страницы (от 1).
-    -page_size: Количество объектов на странице.
-    -callback_prefix: Префикс callback данных.
-    = return: InlineKeyboardMarkup.
+    :param items: Список объектов.
+    :param page: Номер текущей страницы (от 1).
+    :param page_size: Количество объектов на странице.
+    :param callback_prefix: Префикс callback данных.
+    :return: InlineKeyboardMarkup.
     """
     start_idx = (page - 1) * page_size
     end_idx = start_idx + page_size
@@ -125,7 +149,35 @@ async def keyboard_post(hash, hash_id_channel):
     """
     Клавиатура для поста в ленте
     """
-    keyboard = types.InlineKeyboardMarkup(row_width=4).add( 
+    async def imgs_button(keyboard: types.InlineKeyboardMarkup, id_imgs: list, hash: str) -> list:
+        buttons = []
+        for i in range(len(id_imgs)):
+            buttons.append(types.InlineKeyboardButton(
+                    f'{i+1}', callback_data=f'imgs:{i}:{hash}'
+                )
+            )
+        return buttons
+    
+    keyboard = types.InlineKeyboardMarkup(row_width=4)
+
+    id_imgs = await cache.aget(f'{hash}-imgs')
+
+    if id_imgs: # Создания кнопок для остальных фотографий анкеты
+        keyboard.row( *(await imgs_button(keyboard, id_imgs, hash)))
+    elif id_imgs != False:
+        from mainBot.telegram.handlers.rec_feed import decode_base62
+
+        external_id = await decode_base62(hash) 
+        posters = (await Channel.objects.aget(external_id=external_id)).poster
+        if len(posters) >= 1:
+            await cache.aset(f'{hash}', posters, 5*60)
+            keyboard.row( *(await imgs_button(keyboard, posters, hash)))
+        else:
+            await cache.aset(f'{hash}-imgs', False, 5*60)
+
+
+
+    keyboard.add( 
         # Лайка
         types.InlineKeyboardButton("💖", callback_data=f'like_post+{hash}'),
         # Коментарий                           

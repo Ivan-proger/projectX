@@ -60,16 +60,31 @@ def register_handlers(bot: AsyncTeleBot):
             state = await get_user_state(message.from_user.id)
             if not state:
                 await echo_handler(message, bot)
-            elif state == 'comment':
-                await comment_send(message, bot, user)
-            elif state == 'add_channel_img_chat':
-                await add_channel_img_chat_chat(message, bot)
-            elif state == 'add_channel_description_chat':
-                await add_channel_description_chat_chat(message, bot)
-            elif state == "add_channel_parsing":
-                await add_channel_parsing(message, bot)
-            elif state == "add_channel_location_callback":
-                await add_channel_location(message, bot)
+            else:
+                if await stop_action(message, bot):
+                    # Выход из любой активности с помощью сообщения 'Отмена'
+                    msgs = await cache.aget(f'{message.from_user.id}-id_botmessage') 
+                    await bot.delete_messages(
+                        message.chat.id, 
+                        ([message.id] + msgs) if msgs else [message.id]
+                        )                     
+                    cache.delete(f'{message.from_user.id}-comment-tg')
+                    cache.delete(f'{message.from_user.id}-id_botmessage')
+                    await set_user_state(message.from_user.id, None)                      
+                    return True
+                
+                elif state == 'comment':
+                    await comment_send(message, bot, user)
+                elif state == 'add_channel_img_chat':
+                    await add_channel_img_chat_chat(message, bot)
+                elif state == 'add_channel_more_img_chat':
+                    await add_channel_more_img_chat(message, bot)
+                elif state == 'add_channel_description_chat':
+                    await add_channel_description_chat_chat(message, bot)
+                elif state == "add_channel_parsing":
+                    await add_channel_parsing(message, bot)
+                elif state == "add_channel_location_callback":
+                    await add_channel_location(message, bot)
         else:
             await ban_handler(message, bot)
     bot.register_message_handler(
@@ -88,6 +103,10 @@ def register_handlers(bot: AsyncTeleBot):
                 await callback_dislike(call, bot, user)
             elif call.data.startswith("like_post+"):
                 await callback_like(call, bot, user) 
+            
+            # Переключение фотографий
+            elif call.data.startswith('imgs:'):
+                await swap_imgs(call, bot)
 
             # Статус 'comment'
             elif call.data.startswith('comment_post+'):   
@@ -121,9 +140,17 @@ def register_handlers(bot: AsyncTeleBot):
             elif call.data == "add_channel_description_chat":
                 await add_channel_description_chat(call, bot)
 
-            # Добавить/изменить кастомное фото
+            # Изменить кастомное фото
             elif call.data == "add_channel_img_chat":
                 await add_channel_img_chat(call, bot)
+            # Добавить фото    
+            elif call.data == "add_channel_more_img":
+                await add_channel_more_img(call, bot)
+            # Удалить второстпенные фото
+            elif call.data == "add_channel_delete_imgs":
+                await add_channel_delete_imgs(call, bot)
+            elif call.data.startswith('add_imgs:'):
+                await add_channel_swap_imgs(call, bot)
 
             # Добавит через админа бота в тгк
             elif call.data == "add_channel_parsing":

@@ -12,3 +12,4 @@ aio-pika==9.4.3
 celery[aio]
 geopy==2.4.1
 pgeocode==0.5.0
+pillow==11.0.0

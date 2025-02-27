@@ -6,7 +6,7 @@ services:
     env_file:
       - tgBot2/.env
     volumes:
-      - ./postgres:/var/lib/postgressql/data/
+      - ./postgres:/var/lib/postgressql/data
     ports:
       - 5432:5432
 

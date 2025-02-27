@@ -134,12 +134,18 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
         channel.likes,
         channel.dislikes
     )
-    
+    hash_id = await encode_base62(channel.external_id)
     #! Отправить несколько фото
     imges = channel.poster.split()
+    if len(imges) > 1:
+        await cache.aset(f'{hash_id}-imgs', imges, 5*60)
+    else:
+        await cache.aset(f'{hash_id}-imgs', False, 5*60)
+
     imges_input = []
     for img in imges:
         imges_input.append(types.InputMediaPhoto(img, caption, parse_mode='HTML'))
+        break
 
     msg = await bot.send_media_group(
         message.chat.id, 
@@ -150,9 +156,45 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
         caption,
         message.chat.id,
         msg[0].id,
-        reply_markup=(await keyboard_post(await encode_base62(channel.external_id), 
-                                          await encode_base62(channel.id))),
+        reply_markup=(await keyboard_post(
+            hash_id, 
+            await encode_base62(channel.id)
+            )
+        ),
         parse_mode='HTML'
+    )
+
+    # await bot.send_message(
+    #     message.chat.id,
+    #     caption,
+    #     reply_markup=(await keyboard_post(await encode_base62(channel.external_id), 
+    #                                       await encode_base62(channel.id))),
+    #     parse_mode='HTML'
+    # )
+
+#! Изменить фото из имеющихся
+async def swap_imgs(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ callback_data=f'imgs:{i}:{hash}' """
+
+    hash = call.data.split(':')[2]
+    id_imgs = await cache.aget(f'{hash}-imgs')
+    if not id_imgs:
+        external_id = await decode_base62(hash) 
+        id_imgs = (await Channel.objects.aget(external_id=external_id)).poster
+        if len(id_imgs) >= 1:
+            await cache.aset(f'{hash}', id_imgs, 5*60)
+     
+    i = call.data.split(':')[1]   
+    id_img = id_imgs[int(i)]
+
+    # Создаем объект нового медиа с фото
+    new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
+    # Редактируем медиа в сообщении
+    await bot.edit_message_media(
+        chat_id=call.message.chat.id,
+        message_id=call.message.id, 
+        media=new_media,
+        reply_markup=call.message.reply_markup
     )
 
 # Dislike:

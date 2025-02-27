@@ -3,6 +3,7 @@ import aiohttp
 import io
 import json
 import re
+from PIL import Image, ImageDraw
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 from django.core.cache import cache
@@ -22,9 +23,7 @@ async def stop_action(message: types.Message, bot: AsyncTeleBot):
             chat_id=message.chat.id,
             text=await get_message_text("absolute_messages", "stop"),
             parse_mode="HTML",
-        )
-        cache.delete(f'{message.from_user.id}-id_botmessage')
-        await bot.delete_message(message.chat.id, message.id)    
+        ) 
 
         return True  
     return False  
@@ -51,7 +50,9 @@ async def callback_add_channel_start(call: types.CallbackQuery, bot: AsyncTeleBo
         )
     
 #! Вариант через добавления личного канала из своего телеграм профиля:
-async def callback_add_channel_bio(call: types.CallbackQuery, bot: AsyncTeleBot): #* call.data = add_channel_bio
+async def callback_add_channel_bio(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ call.data = add_channel_bio """
+
     profile = await bot.get_chat(call.from_user.id)
     if profile.personal_chat:
         channel = await bot.get_chat(profile.personal_chat.id)
@@ -97,7 +98,9 @@ async def callback_add_channel_bio(call: types.CallbackQuery, bot: AsyncTeleBot)
                 )
 
 #! Пользователь хочет отправить сам фото:             
-async def add_channel_img_chat(call: types.CallbackQuery, bot: AsyncTeleBot): #* call.data = add_channel_img_chat
+async def add_channel_img_chat(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ call.data = add_channel_img_chat """
+
     await set_user_state(call.from_user.id, 'add_channel_img_chat')
     msg = await bot.send_message(
         call.message.chat.id, 
@@ -110,12 +113,6 @@ async def add_channel_img_chat(call: types.CallbackQuery, bot: AsyncTeleBot): #*
     await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)
 #* Отправка самому фотографии в чат    
 async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
-    # Если пользователь хочет выйти
-    if await stop_action(message, bot):
-        cache.delete(f'{message.from_user.id}-id_botmessage')
-        await bot.delete_message(message.chat.id, message.id)      
-        return True
-
     if message.photo:
         await set_user_state(message.from_user.id, None)
 
@@ -123,27 +120,31 @@ async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
         description = await cache.aget(f'{str(message.from_user.id)}-descriptionChannal')
 
         if not channel and not description: # Если пользователь тупой
-            await bot.send_message(message.chat.id, 
-                                   await get_message_text('errors', 'cache_channel'), 
-                                   parse_mode='HTML')
+            await bot.send_message(
+                message.chat.id, 
+                await get_message_text('errors', 'cache_channel'), 
+                parse_mode='HTML'
+            )
             return True
         
         # Локация
         data_city = await cache.aget(f'{message.from_user.id}-location')
         
+        media = types.InputMediaPhoto(
+            message.photo[0].file_id, 
+            caption=anketa_text(
+                channel.title,
+                description,
+                await bot.get_chat_member_count(channel.id),
+                data_city['address'] if data_city else None # Геолокация
+            ) + f'\nt.me/{channel.username}',
+            parse_mode='html'
+        )
+
         await bot.edit_message_media(
             chat_id = message.chat.id,
-            reply_markup=await keyboard_add_chennal(),
-            media = types.InputMediaPhoto(
-                        message.photo[0].file_id, 
-                        caption=anketa_text(
-                        channel.title,
-                        description,
-                        await bot.get_chat_member_count(channel.id),
-                        data_city['address'] if data_city else None # Геолокация
-                        ) + f'\nt.me/{channel.username}',
-                        parse_mode='html'
-                    ),
+            reply_markup=await keyboard_add_chennal(message.from_user.id),
+            media = media,
             message_id = await cache.aget(f'{message.from_user.id}-id_message')
         )
         # Удаляем лишниe сообщения
@@ -153,9 +154,11 @@ async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
         # Удаляем кэш
         cache.delete(f'{message.from_user.id}-id_botmessage')
     else:
-        msg = await bot.send_message(message.chat.id, 
-                                     await get_message_text('errors', 'not_found_img'), 
-                                     parse_mode='HTML')
+        msg = await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'not_found_img'), 
+            parse_mode='HTML'
+        )
         # Создаем лист служеюных сообщений чтобы потом их удалить
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
@@ -164,41 +167,287 @@ async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
             )
         await bot.delete_message(message.chat.id, message.id)
 
+#! Пользователь хочет добавить фото:             
+async def add_channel_more_img(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ call.data = add_channel_more_img """
+
+    imgs_id = await cache.aget(f'{call.from_user.id}-id_imgs')
+    if imgs_id:
+        # Выходим если и так лимит и сообщаем об этом
+        if len(imgs_id) > 4:
+            await bot.answer_callback_query(
+                call.id, 
+                await get_message_text('errors', 'limit_imgs'), 
+                True
+            )           
+            return True 
+    else:    
+        await cache.aset(f'{call.from_user.id}-id_imgs', [call.message.photo[0].file_id] ,60*25)
+
+    await set_user_state(call.from_user.id, 'add_channel_more_img_chat')
+    msg = await bot.send_message(
+        call.message.chat.id, 
+        await get_message_text('general', 'add_channel_more_img_chat'), 
+        reply_markup=(await stop_message()),
+        parse_mode='HTML'
+        )
+    # Храним id сообщения тг чтобы работать красиво
+    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)
+        
+#* sending in chat    
+async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
+    async def limit_msg(message: types.Message, bot: AsyncTeleBot):
+        msg = await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'limit_imgs'), 
+            parse_mode='HTML'
+        )
+        # Создаем лист служеюных сообщений чтобы потом их удалить
+        await cache.aset(
+            f'{message.from_user.id}-id_botmessage', 
+            await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
+            25*60
+        )
+        
+    imgs_id = await cache.aget(f'{message.from_user.id}-id_imgs')  
+
+    if len(imgs_id) > 4:
+        await limit_msg(message, bot)
+        return True 
+    # Если просто одна фотография
+    if message.photo:
+        imgs_id.append(message.photo[0].file_id)   
+        await cache.aset(
+            f'{message.from_user.id}-id_botmessage', 
+            await cache.aget(f'{message.from_user.id}-id_botmessage') + [message.id], 
+            25*60
+        )      
+    else:
+        msg = await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'not_found_img'), 
+            parse_mode='HTML'
+        )
+        # Создаем лист служеюных сообщений чтобы потом их удалить
+        await cache.aset(
+            f'{message.from_user.id}-id_botmessage', 
+            await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
+            25*60
+            )
+        await bot.delete_message(message.chat.id, message.id) 
+        return True       
+    
+    await cache.aset(
+        f'{message.from_user.id}-id_imgs', 
+        imgs_id,
+        60*25)
+
+    await bot.edit_message_reply_markup(
+        message.chat.id,
+        await cache.aget(f'{message.from_user.id}-id_message'),
+        reply_markup = await keyboard_add_chennal(message.from_user.id)
+    )
+
+#! Удалить второстепенные фото:             
+async def add_channel_delete_imgs(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ call.data = add_channel_delete_imgs """
+    await bot.answer_callback_query(
+        call.id, 
+        await get_message_text('keyboards', 'add_channel_complite'), 
+    )       
+    cache.delete(f'{call.from_user.id}-id_imgs') 
+
+    await bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.id,
+        reply_markup = await keyboard_add_chennal(call.from_user.id)
+    )
+
+#! Изменить фото из имеющихся
+async def add_channel_swap_imgs(call: types.CallbackQuery, bot: AsyncTeleBot): 
+    """ call.data = add_channel_swap_imgs """
+    
+    id_imgs = await cache.aget(f'{call.from_user.id}-id_imgs')
+    if not id_imgs:
+        await bot.answer_callback_query(
+            call.id, 
+            await get_message_text('errors', 'cache_channel'), 
+            True
+        )           
+        return True        
+     
+    i = call.data.split(':')[1]   
+    id_img = id_imgs[int(i)]
+
+    # Создаем объект нового медиа с фото
+    new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
+    # Редактируем медиа в сообщении
+    await bot.edit_message_media(
+        chat_id=call.message.chat.id,
+        message_id=call.message.id, 
+        media=new_media,
+        reply_markup=call.message.reply_markup
+    )
+
+# Асинхронная функция для создания изображения с человечком
+async def create_placeholder_avatar(
+    size: int = 500,
+    background_color: str = "white",
+    line_color: str = "black",
+    line_width: int = 14,
+    head_radius_ratio: float = 0.4,
+    eye_radius_ratio: float = 0.04,
+    body_width_ratio: float = 0.7,
+    body_height_ratio: float = 0.13,
+    mouth_width_ratio: float = 0.3,
+    mouth_height_ratio: float = 0.05
+) -> io.BytesIO:
+    """
+    Создаёт изображение с человечком в стиле "нет аватарки".
+
+    :param size: Размер изображения (квадратный).
+    :param background_color: Цвет фона.
+    :param line_color: Цвет линий для рисования.
+    :param line_width: Толщина линий.
+    :param head_radius_ratio: Радиус головы относительно размера изображения.
+    :param eye_radius_ratio: Радиус глаз относительно размера изображения.
+    :param body_width_ratio: Ширина тела относительно размера головы.
+    :param body_height_ratio: Высота тела относительно размера изображения.
+    :param mouth_width_ratio: Ширина рта относительно размера головы.
+    :param mouth_height_ratio: Высота рта относительно размера головы.
+    :return: Буфер BytesIO с изображением.
+    """
+    # Создаём квадратное изображение
+    image = Image.new("RGB", (size, size), background_color)
+    draw = ImageDraw.Draw(image)
+
+    # Координаты центра
+    center = size // 2
+
+    # Расчёт размеров на основе пропорций
+    head_radius = int(size * head_radius_ratio)
+    eye_radius = int(size * eye_radius_ratio)
+    body_width = int(head_radius * body_width_ratio)
+    body_height = int(size * body_height_ratio)
+    mouth_width = int(head_radius * mouth_width_ratio)
+    mouth_height = int(head_radius * mouth_height_ratio+20)
+    eye_offset_x = head_radius // 2
+    eye_offset_y = head_radius // 3
+
+    # Рисуем голову
+    draw.ellipse(
+        (center - head_radius, center - head_radius, center + head_radius, center + head_radius),
+        outline=line_color,
+        width=line_width
+    )
+
+    # Рисуем глаза
+    draw.ellipse(
+        (center - eye_offset_x - eye_radius, center - eye_offset_y - eye_radius,
+         center - eye_offset_x + eye_radius, center - eye_offset_y + eye_radius),
+        fill=line_color
+    )
+    draw.ellipse(
+        (center + eye_offset_x - eye_radius, center - eye_offset_y - eye_radius,
+         center + eye_offset_x + eye_radius, center - eye_offset_y + eye_radius),
+        fill=line_color
+    )
+
+    # Рисуем рот
+    draw.arc(
+        (center - mouth_width, center + eye_offset_y,
+         center + mouth_width, center + eye_offset_y + mouth_height),
+        start=0,
+        end=200,
+        fill=line_color,
+        width=line_width+150
+    )
+
+    # Рисуем тело
+    draw.line(
+        [(center, center + head_radius), (center, center + head_radius + body_height)],
+        fill=line_color,
+        width=line_width
+    )
+    draw.line(
+        [(center, center + head_radius + body_height // 2),
+         (center - body_width, center + head_radius + body_height)],
+        fill=line_color,
+        width=line_width
+    )
+    draw.line(
+        [(center, center + head_radius + body_height // 2),
+         (center + body_width, center + head_radius + body_height)],
+        fill=line_color,
+        width=line_width
+    )
+
+    # Сохраняем изображение в буфер
+    image_buffer = io.BytesIO()
+    image.save(image_buffer, format="PNG")
+    image_buffer.seek(0)  # Перемещаем указатель в начало
+
+    # Освобождаем ресурсы
+    image.close()
+    return image_buffer
+
+
 #! Скачиваем файл с помощью aiohttp
 async def download_pic_send(channel, bot: AsyncTeleBot, user_id, message, capti0n): 
-    # Отправляем статус "отправляет фото"
-    await bot.send_chat_action(message.chat.id, 'upload_photo')
-
-    file_url = await bot.get_file_url(channel.photo.big_file_id)
+    """
+    Асинхронно отправляет фото или делает новоое фото чтобы оно было
+    """
     if not await cache.aget(f'{user_id}-download-pic'):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(file_url) as resp:
-                if resp.status == 200:
-                    # Читаем данные файла как байты
-                    file_data = io.BytesIO(await resp.read())
-                    # Отправляем этот файл как новое фото через send_photo
-                    msg = await bot.send_media_group(
-                        message.chat.id, 
-                        [types.InputMediaPhoto(file_data, capti0n, parse_mode='HTML')]
-                    )
-                    await bot.edit_message_caption(
-                        capti0n,
-                        message.chat.id,
-                        msg[0].id,
-                        reply_markup=(await keyboard_add_chennal()),
-                        parse_mode='HTML'
-                    )
-                    await bot.delete_message(message.chat.id, message.id)
-                    await cache.aset(f'{str(user_id)}-download-pic', True, 15)
-                    await cache.aset(f'{user_id}-pic', msg[0].photo[-1].file_id, 60*30)
-                else:
-                    await bot.send_message(message.chat.id, 
-                                           await get_message_text('errors', 'not_found'), 
-                                           parse_mode='HTML')
+        # Отправляем статус "отправляет фото"
+        await bot.send_chat_action(message.chat.id, 'upload_photo')
+        try:    # Пробуем найти фотогрвфию в канале или сообществе
+            file_url = await bot.get_file_url(channel.photo.big_file_id)
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url) as resp:
+                    if resp.status == 200:
+                        # Читаем данные файла как байты
+                        file_data = io.BytesIO(await resp.read())
+                        # Сохраняем фото
+                        msg = await bot.send_media_group(
+                            message.chat.id, 
+                            [types.InputMediaPhoto(file_data, capti0n, parse_mode='HTML')]
+                        )
+                    else:
+                        await bot.send_message(
+                            message.chat.id, 
+                            await get_message_text('errors', 'not_found'), 
+                            parse_mode='HTML'
+                            )
+        except:     # Если канал без аватарки делаем вот так
+            try:
+                # Создаём изображение с человечком
+                image_buffer = await create_placeholder_avatar()   
+                msg = await bot.send_media_group(
+                    message.chat.id, 
+                    [types.InputMediaPhoto(image_buffer, capti0n, parse_mode='HTML')]
+                ) 
+            finally:
+                # Гарантируем закрытие буфера
+                image_buffer.close()    
+        # Обрабатываем            
+        await bot.edit_message_caption(
+            capti0n,
+            message.chat.id,
+            msg[0].id,
+            reply_markup=(await keyboard_add_chennal()),
+            parse_mode='HTML'
+        )
+        await bot.delete_message(message.chat.id, message.id)
+        await cache.aset(f'{str(user_id)}-download-pic', True, 15)
+        await cache.aset(f'{user_id}-pic', msg[0].photo[-1].file_id, 60*30)
+        cache.delete(f'{message.from_user.id}-id_imgs') # Очистка если что на всякий
     else:
-        await bot.send_message(message.chat.id, 
-                               await get_message_text('errors', 'wait_download'), 
-                               parse_mode='HTML')       
+        await bot.send_message(
+            message.chat.id, 
+            await get_message_text('errors', 'wait_download'), 
+            parse_mode='HTML'
+            )       
 
 #! Состояние для отправки локации
 async def add_channel_location_callback(call: types.CallbackQuery, bot: AsyncTeleBot):
@@ -219,11 +468,6 @@ async def add_channel_location_callback(call: types.CallbackQuery, bot: AsyncTel
 async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
     """ state: add_channel_location_callback""" 
 
-    # Если пользователь хочет выйти
-    if await stop_action(message, bot):
-        cache.delete(f'{message.from_user.id}-id_botmessage')
-        await bot.delete_message(message.chat.id, message.id)      
-        return True
     if not await cache.aget(f'{message.from_user.id}-limitGeo'):
         if message.content_type == 'location':
             # Обработка геолокации
@@ -295,6 +539,9 @@ async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
 #* Не согласен                       
 async def add_channel_location_close(call: types.CallbackQuery, bot: AsyncTeleBot):
     """call.data == 'message_close'"""
+    # обнуляем статус
+    await set_user_state(call.from_user.id, None)
+
     # Удаляем
     cache.delete(f'{call.from_user.id}-location')
     # Удаляем
@@ -328,7 +575,7 @@ async def add_channel_location_complite(call: types.CallbackQuery, bot: AsyncTel
             await bot.get_chat_member_count(channel.id),
             city_data['address'] # Город 
             ) + f'\nt.me/{channel.username}',
-        reply_markup = await keyboard_add_chennal(),
+        reply_markup = await keyboard_add_chennal(call.from_user.id),
         parse_mode='HTML'
     )
     # обнуляем статус
@@ -346,13 +593,7 @@ async def add_channel_description_chat(call: types.CallbackQuery, bot: AsyncTele
     # Храним id сообщения тг чтобы работать красиво
     await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
     await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)    
-async def add_channel_description_chat_chat(message: types.Message, bot: AsyncTeleBot):
-    # Если пользователь хочет выйти
-    if await stop_action(message, bot):
-        cache.delete(f'{message.from_user.id}-id_botmessage')
-        await bot.delete_message(message.chat.id, message.id)        
-        return True     
-    
+async def add_channel_description_chat_chat(message: types.Message, bot: AsyncTeleBot):    
     #* Отправка самому описания в чат
     if message.text:
         channel = await cache.aget(f'{str(message.from_user.id)}-channel')
@@ -369,7 +610,7 @@ async def add_channel_description_chat_chat(message: types.Message, bot: AsyncTe
                 await bot.get_chat_member_count(channel.id),
                 data_city['address'] if data_city else None # Геолокация
                 ) + f'\nt.me/{channel.username}',
-            reply_markup = await keyboard_add_chennal(),
+            reply_markup = await keyboard_add_chennal(message.from_user.id),
             parse_mode='HTML'
         )
         await cache.aset(f'{str(message.from_user.id)}-descriptionChannal', message.text, 60*25)
@@ -461,7 +702,7 @@ async def add_channel_back_callback(call: types.CallbackQuery, bot: AsyncTeleBot
         caption=call.message.caption,
         chat_id=call.message.chat.id,
         message_id=call.message.id,
-        reply_markup=await keyboard_add_chennal(),
+        reply_markup=await keyboard_add_chennal(call.from_user.id),
         parse_mode='HTML'
     )
 
@@ -662,10 +903,17 @@ async def callback_add_channel_complite(call: types.CallbackQuery, bot: AsyncTel
             return True # чтобы ошибок не было 
           
         city_data = await cache.aget(f'{call.from_user.id}-location')
+        
+        # Несколько фото профиля
+        id_imgs = await cache.aget(f'{call.from_user.id}-id_imgs')
+        if id_imgs:
+            poster = ' '.join(id_imgs)
+        else:
+            poster = call.message.photo[-1].file_id
 
         chennal_obj = await Channel.objects.acreate(
             name = title,
-            poster = call.message.photo[-1].file_id,
+            poster = poster,
             external_id = channel.id,
             folowers = await bot.get_chat_member_count(link_channel)
         )

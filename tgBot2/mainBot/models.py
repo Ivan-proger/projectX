@@ -69,9 +69,9 @@ class User(models.Model):
 # Каналы    
 class Channel(models.Model):
     user = models.ManyToManyField(User, related_name='Владельцы')
-    name = models.CharField(max_length=32)
+    name = models.CharField(max_length=32, blank=True, default='')
     description = models.CharField(blank=True, max_length=256, default='', verbose_name='Описание')
-    poster = models.CharField(max_length=257, blank=True, default='', verbose_name='Изображение')
+    poster = models.CharField(max_length=512, blank=True, default='', verbose_name='Изображение')
     external_id = models.BigIntegerField(verbose_name='ID')
     add_time = models.DateTimeField(default=timezone.now, verbose_name='Дата создания')
 
