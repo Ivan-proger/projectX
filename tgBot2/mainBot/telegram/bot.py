@@ -48,7 +48,7 @@ async def set_user_state(user_id, state, time=60*25): # Установить
         await cache.aset(f"user_state:{user_id}", state, time)
 
 #! метод для messages.json 
-async def get_message_text(message_key, version, language='ru'):
+async def get_message_text(message_key: str, version: str, language: str='ru') -> str:
     if not settings.DEBUG:
         messages = cache.get('messages')
     else:

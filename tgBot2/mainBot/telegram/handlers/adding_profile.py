@@ -23,6 +23,7 @@ async def stop_action(message: types.Message, bot: AsyncTeleBot):
             chat_id=message.chat.id,
             text=await get_message_text("absolute_messages", "stop"),
             parse_mode="HTML",
+            reply_markup=await murkup_keboard_stay()
         ) 
 
         return True  

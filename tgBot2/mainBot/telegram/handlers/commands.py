@@ -9,7 +9,7 @@ from telebot import types
 
 from mainBot.models import * # импорт всех моделей Django
 from mainBot.telegram.bot import get_user_state, set_user_state, get_message_text, anketa_text
-#from telegram.keyboards import keyboard_add_chennal, update_keyboard_warning, stop_message, generate_paginated_keyboard
+from mainBot.telegram.keyboards import *
 
 #! Ответ на /start
 async def start_and_register(message: types.Message, bot: AsyncTeleBot):
@@ -47,6 +47,13 @@ async def start_and_register(message: types.Message, bot: AsyncTeleBot):
         )
 
     if created:
+        await bot.send_message(
+            message.chat.id,
+            await get_message_text('general', 'new_user'),
+            parse_mode='HTML',
+            reply_markup=await murkup_keboard_stay()
+        )
+
         user.ref_code = await genering_code()
         if (" " in message.text) and created:
             if not user.invited_by:
@@ -54,15 +61,13 @@ async def start_and_register(message: types.Message, bot: AsyncTeleBot):
                 user.invited_by = friend
                 friend.ref_people += 1
                 await friend.asave()
-                await bot.send_message(message.chat.id, 'Спасибо за поддержку!', parse_mode='HTML')
         await user.asave()
     else:
         await set_user_state(message.from_user.id, None)        
 
 
-#! Временно !!!
-async def echo_handler(message: types.Message, bot: AsyncTeleBot):
-    await bot.send_message(message.chat.id, f"Вы сказали: {message.text} \r\n-- {await get_user_state(message.from_user.id)}")
+# async def echo_handler(message: types.Message, bot: AsyncTeleBot):
+#     await bot.send_message(message.chat.id, f"Вы сказали: {message.text} \r\n-- {await get_user_state(message.from_user.id)}")
 
 
 #! BAN

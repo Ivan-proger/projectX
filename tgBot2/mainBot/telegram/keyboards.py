@@ -17,7 +17,7 @@ async def complite_and_close():
 
 #* Клавиатура для кнопки стоп
 async def stop_message():
-    return types.ReplyKeyboardMarkup(row_width=1).row(
+    return types.ReplyKeyboardMarkup(True).row(
         types.InlineKeyboardButton(await get_message_text("absolute_messages", "stop")))
 
 #* Клавиатура для редактирования канала 
@@ -145,17 +145,19 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
     return keyboard
 
 # Клаиатура для ленты
-async def keyboard_post(hash, hash_id_channel):
+async def keyboard_post(hash: str, hash_id_channel: str, n: int = 0):
     """
     Клавиатура для поста в ленте
     """
-    async def imgs_button(keyboard: types.InlineKeyboardMarkup, id_imgs: list, hash: str) -> list:
+    async def imgs_button(id_imgs: list, hash: str) -> list:
         buttons = []
         for i in range(len(id_imgs)):
             buttons.append(types.InlineKeyboardButton(
-                    f'{i+1}', callback_data=f'imgs:{i}:{hash}'
+                    f'{(i+1) if i != n else '📷'} ', 
+                    callback_data=f'imgs:{i}:{hash}:{hash_id_channel}'
                 )
             )
+        
         return buttons
     
     keyboard = types.InlineKeyboardMarkup(row_width=4)
@@ -163,7 +165,7 @@ async def keyboard_post(hash, hash_id_channel):
     id_imgs = await cache.aget(f'{hash}-imgs')
 
     if id_imgs: # Создания кнопок для остальных фотографий анкеты
-        keyboard.row( *(await imgs_button(keyboard, id_imgs, hash)))
+        keyboard.row( *(await imgs_button(id_imgs, hash)))
     elif id_imgs != False:
         from mainBot.telegram.handlers.rec_feed import decode_base62
 
@@ -231,4 +233,15 @@ async def complite_tags_keybord_finish(item_id, hash, hash_id_channel):
         )
 
         )        
+    return keyboard
+
+async def murkup_keboard_stay() -> types.ReplyKeyboardMarkup:
+    keyboard = types.ReplyKeyboardMarkup()
+    keyboard.add(
+        types.KeyboardButton(await get_message_text('keyboards', 'callback_feed_start')),
+        types.KeyboardButton(await get_message_text('keyboards', 'menu_change_profile')),
+        types.KeyboardButton(await get_message_text('keyboards', 'menu_referals')),
+        types.KeyboardButton(await get_message_text('keyboards', 'menu_change_location')),
+    )
+
     return keyboard

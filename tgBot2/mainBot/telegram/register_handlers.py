@@ -4,6 +4,7 @@ from telebot import types
 from mainBot.telegram.handlers.rec_feed import *
 from mainBot.telegram.handlers.adding_profile import *
 from mainBot.telegram.handlers.commands import *
+from mainBot.telegram.handlers.msg_to_chat import check_message_comannds
 
 
 #! Oбновление последней активности
@@ -59,7 +60,7 @@ def register_handlers(bot: AsyncTeleBot):
         if user:
             state = await get_user_state(message.from_user.id)
             if not state:
-                await echo_handler(message, bot)
+                await check_message_comannds(message, bot, user)
             else:
                 if await stop_action(message, bot):
                     # Выход из любой активности с помощью сообщения 'Отмена'

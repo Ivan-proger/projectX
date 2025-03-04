@@ -174,28 +174,30 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
 
 #! Изменить фото из имеющихся
 async def swap_imgs(call: types.CallbackQuery, bot: AsyncTeleBot): 
-    """ callback_data=f'imgs:{i}:{hash}' """
+    """ callback_data=f'imgs:{i}:{hash}:{hash_id_channel}' """
 
     hash = call.data.split(':')[2]
     id_imgs = await cache.aget(f'{hash}-imgs')
+    hash_id_channel = call.data.split(':')[3]
     if not id_imgs:
         external_id = await decode_base62(hash) 
-        id_imgs = (await Channel.objects.aget(external_id=external_id)).poster
+        id_imgs = ((await Channel.objects.aget(external_id=external_id)).poster).split()
         if len(id_imgs) >= 1:
             await cache.aset(f'{hash}', id_imgs, 5*60)
      
     i = call.data.split(':')[1]   
     id_img = id_imgs[int(i)]
 
-    # Создаем объект нового медиа с фото
-    new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
-    # Редактируем медиа в сообщении
-    await bot.edit_message_media(
-        chat_id=call.message.chat.id,
-        message_id=call.message.id, 
-        media=new_media,
-        reply_markup=call.message.reply_markup
-    )
+    if id_img != call.message.photo[0].file_id:
+        # Создаем объект нового медиа с фото
+        new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
+        # Редактируем медиа в сообщении
+        await bot.edit_message_media(
+            chat_id=call.message.chat.id,
+            message_id=call.message.id, 
+            media=new_media,
+            reply_markup= await keyboard_post(hash, hash_id_channel, int(i))
+        )
 
 # Dislike:
 async def callback_dislike(call: types.CallbackQuery, bot: AsyncTeleBot, user: User = None):
@@ -340,7 +342,7 @@ async def feed_back_collback(call: types.CallbackQuery, bot: AsyncTeleBot):
     await bot.edit_message_reply_markup(
         call.message.chat.id,
         call.message.id,
-        reply_markup=await keyboard_post(call.data.split(":")[1], call.data.split(":")[1])
+        reply_markup=await keyboard_post(call.data.split(":")[1], call.data.split(":")[2])
         )
 # Реакция на выбранную категорию для жалобы    
 async def complite_category_choice(call: types.CallbackQuery, bot: AsyncTeleBot):
