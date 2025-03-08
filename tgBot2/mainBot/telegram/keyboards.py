@@ -1,5 +1,5 @@
 from ast import List
-from telebot import types
+from telebot.types import *
 from mainBot.models import СategoryComplaint, Channel
 from django.core.cache import cache
 from django.conf import settings
@@ -8,35 +8,35 @@ from .bot import get_user_state, set_user_state, get_message_text, anketa_text
 
 async def complite_and_close():
     """Конопки 'Готово' и 'Отмена' под сообщениями"""
-    return types.InlineKeyboardMarkup(row_width=2).row(
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_complite'), 
+    return InlineKeyboardMarkup(row_width=2).row(
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_complite'), 
                                     callback_data='message_complite'),                         
-        types.InlineKeyboardButton(await get_message_text("absolute_messages", "stop"), 
+        InlineKeyboardButton(await get_message_text("absolute_messages", "stop"), 
                                     callback_data='message_close'),
     )                                
 
 #* Клавиатура для кнопки стоп
 async def stop_message():
-    return types.ReplyKeyboardMarkup(True).row(
-        types.InlineKeyboardButton(await get_message_text("absolute_messages", "stop")))
+    return ReplyKeyboardMarkup(True).row(
+        InlineKeyboardButton(await get_message_text("absolute_messages", "stop")))
 
 #* Клавиатура для редактирования канала 
-async def keyboard_add_chennal(user_id=None):
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
+async def keyboard_add_chennal(user_id: int|str =None) -> InlineKeyboardMarkup:
+    keyboard = InlineKeyboardMarkup(row_width=2)
 
     if user_id:
         id_imgs = await cache.aget(f'{user_id}-id_imgs')
         if id_imgs:
             buttons = []
             for i in range(len(id_imgs)):
-                buttons.append(types.InlineKeyboardButton(
+                buttons.append(InlineKeyboardButton(
                         f'{i+1}', callback_data=f'add_imgs:{i}'
                     )
                 )
             keyboard.row(*buttons)
             # Удалить второстепенные фото
             keyboard.add(
-                types.InlineKeyboardButton(
+                InlineKeyboardButton(
                     await get_message_text('keyboards', 'add_channel_delete_imgs'), 
                     callback_data='add_channel_delete_imgs'
                     )
@@ -44,39 +44,66 @@ async def keyboard_add_chennal(user_id=None):
     
     keyboard.add( 
         # Добавить фото
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_img_chat'), 
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_img_chat'), 
                                    callback_data='add_channel_img_chat'),
         # Добавить еще фото
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_more_img'), 
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_more_img'), 
                                    callback_data='add_channel_more_img'),                                   
         # Добавить описание                           
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_description_chat'), 
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_description_chat'), 
                                    callback_data='add_channel_description_chat'),
         # Добавить город                           
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_location'), 
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_location'), 
                                    callback_data='add_channel_location'),                                   
         # Готово
-        types.InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_complite'), 
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_complite'), 
                                    callback_data='add_channel_precomplite'),         
     )  
     return keyboard 
 
+#* Изменение уже добавленого канала с помощью InlineKeyboardMarkup
+async def keyboard_for_change_channel(user_id: int|str =None) -> InlineKeyboardMarkup:
+    """ Редактирования канала """
+    base_keyboard = await keyboard_add_chennal(user_id)
+
+    if base_keyboard.keyboard:
+        last_row = base_keyboard.keyboard[-1]
+        if last_row:
+            # Удаляем последнюю кнопку в последней строке
+            last_row.pop()
+            # Если строка стала пустой, удаляем её
+            if not last_row:
+                base_keyboard.keyboard.pop()
+
+    base_keyboard.add(
+        InlineKeyboardButton(await get_message_text('keyboards', 'change_categories'), 
+                                   callback_data='change_categories'),                   
+    )
+
+    base_keyboard.row(
+        # Готово
+        InlineKeyboardButton(await get_message_text('keyboards', 'add_channel_complite'), 
+                                   callback_data='change_channel_complete'),           
+    )
+
+    return base_keyboard
+
 #* Функция для обновления клавиатуры с добавлением смайлика к кнопке
-async def update_keyboard_warning(call: types.CallbackQuery, callback_data, row_width=1):
+async def update_keyboard_warning(call: CallbackQuery, callback_data, row_width=1):
     # Получаем текущую клавиатуру из сообщения
     keyboard = call.message.reply_markup
     # Перебираем кнопки и добавляем смайлик к нажатой кнопке
-    updated_keyboard = types.InlineKeyboardMarkup(row_width=row_width)
+    updated_keyboard = InlineKeyboardMarkup(row_width=row_width)
     for buttons in keyboard.keyboard:
         for button in buttons:
             if button.callback_data == callback_data:
                 # Добавляем смайлик "осторожно" к тексту нажатой кнопки
                 if str(button.text[0]) != str('⚠️')[0]:
-                    updated_button = types.InlineKeyboardButton(text=f"⚠️ {button.text}", callback_data=button.callback_data)
+                    updated_button = InlineKeyboardButton(text=f"⚠️ {button.text}", callback_data=button.callback_data)
                 else:
                     updated_button = button    
             else:         
-                updated_button = types.InlineKeyboardButton(text=button.text, callback_data=button.callback_data)
+                updated_button = InlineKeyboardButton(text=button.text, callback_data=button.callback_data)
             updated_keyboard.add(updated_button)
 
     return updated_keyboard
@@ -96,10 +123,10 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
     end_idx = start_idx + page_size
     page_items = items[start_idx:end_idx]
     
-    keyboard = types.InlineKeyboardMarkup()
+    keyboard = InlineKeyboardMarkup()
     # Добавляем для информации кнопку
     if text_info:
-        keyboard.row(types.InlineKeyboardButton(
+        keyboard.row(InlineKeyboardButton(
             text_info, 
             callback_data=f"trash123"
             )
@@ -107,22 +134,22 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
 
     buttons = []
     for item in page_items:
-        button = types.InlineKeyboardButton(
+        button = InlineKeyboardButton(
             text=f"{item.name} {'✅' if item.id in selected_ids else ''}",  # Отображаемое название объекта
             callback_data=f"{callback_prefix}:{item.id}:page:{page}"  # Метаданные
         )
         buttons.append(button)
     keyboard.add(*buttons, row_width=2)
     
-    button_next = types.InlineKeyboardButton(
+    button_next = InlineKeyboardButton(
         "➡️", 
         callback_data=f"{callback_prefix}:page:{page+1}"
         )
-    button_back = types.InlineKeyboardButton(
+    button_back = InlineKeyboardButton(
         "⬅️", 
         callback_data=f"{callback_prefix}:page:{page-1}"
         )
-    button_no = types.InlineKeyboardButton(
+    button_no = InlineKeyboardButton(
         "📛", 
         callback_data=f"trash123"
         )
@@ -141,7 +168,6 @@ async def generate_paginated_keyboard(items, page, page_size, callback_prefix, s
     if pagination_buttons:
         keyboard.row(*pagination_buttons)
 
-
     return keyboard
 
 # Клаиатура для ленты
@@ -152,7 +178,7 @@ async def keyboard_post(hash: str, hash_id_channel: str, n: int = 0):
     async def imgs_button(id_imgs: list, hash: str) -> list:
         buttons = []
         for i in range(len(id_imgs)):
-            buttons.append(types.InlineKeyboardButton(
+            buttons.append(InlineKeyboardButton(
                     f'{(i+1) if i != n else '📷'} ', 
                     callback_data=f'imgs:{i}:{hash}:{hash_id_channel}'
                 )
@@ -160,7 +186,7 @@ async def keyboard_post(hash: str, hash_id_channel: str, n: int = 0):
         
         return buttons
     
-    keyboard = types.InlineKeyboardMarkup(row_width=4)
+    keyboard = InlineKeyboardMarkup(row_width=4)
 
     id_imgs = await cache.aget(f'{hash}-imgs')
 
@@ -177,17 +203,15 @@ async def keyboard_post(hash: str, hash_id_channel: str, n: int = 0):
         else:
             await cache.aset(f'{hash}-imgs', False, 5*60)
 
-
-
     keyboard.add( 
         # Лайка
-        types.InlineKeyboardButton("💖", callback_data=f'like_post+{hash}'),
+        InlineKeyboardButton("💖", callback_data=f'like_post+{hash}'),
         # Коментарий                           
-        types.InlineKeyboardButton("💬", callback_data=f'comment_post+{hash}+{hash_id_channel}'),
+        InlineKeyboardButton("💬", callback_data=f'comment_post+{hash}+{hash_id_channel}'),
         # Дизлайк                           
-        types.InlineKeyboardButton("👎", callback_data=f'dislike_post+{hash}'),                                   
+        InlineKeyboardButton("👎", callback_data=f'dislike_post+{hash}'),                                   
         # Жалоба
-        types.InlineKeyboardButton("⚠️", callback_data=f'complaint_post+{hash}+{hash_id_channel}'),         
+        InlineKeyboardButton("⚠️", callback_data=f'complaint_post+{hash}+{hash_id_channel}'),         
     ) 
 
     return keyboard 
@@ -199,12 +223,12 @@ async def complite_tags_keybord(hash, hash_id_channel):
     """
     keyboard = await cache.aget('complite_tags_keybord')
     if not keyboard:
-        keyboard = types.InlineKeyboardMarkup()
+        keyboard = InlineKeyboardMarkup()
         async for cp in СategoryComplaint.objects.all():
-            keyboard.add(types.InlineKeyboardButton(cp.name, callback_data=f'complite_tags:{cp.id}:{hash}:{hash_id_channel}'))
+            keyboard.add(InlineKeyboardButton(cp.name, callback_data=f'complite_tags:{cp.id}:{hash}:{hash_id_channel}'))
 
         keyboard.row(
-            types.InlineKeyboardButton(
+            InlineKeyboardButton(
                 await get_message_text('keyboards', 'add_channel_back'),
                 callback_data=f'feed_back:{hash}:{hash_id_channel}'
             ),            
@@ -215,19 +239,19 @@ async def complite_tags_keybord(hash, hash_id_channel):
 async def complite_tags_keybord_finish(item_id, hash, hash_id_channel):
     """ Подтверждение перед жалобой """
 
-    keyboard = types.InlineKeyboardMarkup()
+    keyboard = InlineKeyboardMarkup()
     item = await cache.aget(f'{item_id}-tags_keybord')
     if not item:
         item = await СategoryComplaint.objects.aget(id=int(item_id))
         await cache.aset(f'{item_id}-tags_keybord', item, 1 if settings.DEBUG else None)
 
-    keyboard.row(types.InlineKeyboardButton(f'{item.name}', callback_data='trash123'))    
+    keyboard.row(InlineKeyboardButton(f'{item.name}', callback_data='trash123'))    
     keyboard.row(
-        types.InlineKeyboardButton(
+        InlineKeyboardButton(
             await get_message_text('keyboards', 'add_channel_back'),
             callback_data=f'feed_back:{hash}:{hash_id_channel}'
         ),            
-        types.InlineKeyboardButton(
+        InlineKeyboardButton(
             await get_message_text('keyboards', 'add_channel_complite'),
             callback_data=f'tags_complite:{item_id}:{hash}:{hash_id_channel}'
         )
@@ -235,13 +259,13 @@ async def complite_tags_keybord_finish(item_id, hash, hash_id_channel):
         )        
     return keyboard
 
-async def murkup_keboard_stay() -> types.ReplyKeyboardMarkup:
-    keyboard = types.ReplyKeyboardMarkup()
+async def murkup_keboard_stay() -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup()
     keyboard.add(
-        types.KeyboardButton(await get_message_text('keyboards', 'callback_feed_start')),
-        types.KeyboardButton(await get_message_text('keyboards', 'menu_change_profile')),
-        types.KeyboardButton(await get_message_text('keyboards', 'menu_referals')),
-        types.KeyboardButton(await get_message_text('keyboards', 'menu_change_location')),
+        KeyboardButton(await get_message_text('keyboards', 'callback_feed_start')),
+        KeyboardButton(await get_message_text('keyboards', 'menu_change_profile')),
+        KeyboardButton(await get_message_text('keyboards', 'menu_referals')),
+        KeyboardButton(await get_message_text('keyboards', 'menu_change_location')),
     )
 
     return keyboard

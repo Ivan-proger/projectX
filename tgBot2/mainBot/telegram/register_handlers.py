@@ -4,8 +4,8 @@ from telebot import types
 from mainBot.telegram.handlers.rec_feed import *
 from mainBot.telegram.handlers.adding_profile import *
 from mainBot.telegram.handlers.commands import *
-from mainBot.telegram.handlers.msg_to_chat import check_message_comannds
-
+from mainBot.telegram.handlers.msg_to_chat import *
+from mainBot.models import *
 
 #! Oбновление последней активности
 async def update_activity(external_id):
@@ -164,6 +164,10 @@ def register_handlers(bot: AsyncTeleBot):
                 await add_channel_location_complite(call, bot)    
             elif call.data == 'message_close':
                 await add_channel_location_close(call, bot)
+
+            # Подтверждение на редактирование канала
+            elif call.data == 'change_channel_complete':
+                await change_channel_complete(call, bot)
 
             # Финальное добавление канала
             elif call.data == "add_channel_complite":

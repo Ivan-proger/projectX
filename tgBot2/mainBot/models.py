@@ -68,8 +68,8 @@ class User(models.Model):
     
 # Каналы    
 class Channel(models.Model):
-    user = models.ManyToManyField(User, related_name='Владельцы')
-    name = models.CharField(max_length=32, blank=True, default='')
+    user = models.ManyToManyField(User, related_name='channels')
+    title = models.CharField(max_length=32, blank=True, default='')
     description = models.CharField(blank=True, max_length=256, default='', verbose_name='Описание')
     poster = models.CharField(max_length=512, blank=True, default='', verbose_name='Изображение')
     external_id = models.BigIntegerField(verbose_name='ID')
@@ -94,8 +94,8 @@ class Channel(models.Model):
         verbose_name_plural = 'Каналы'
     
     def __str__(self):
-        if self.name:
-            return f'{self.name} ({str(self.external_id)})'
+        if self.title:
+            return f'{self.title} ({str(self.external_id)})'
         else:
             return f"'{str(self.external_id)}'"
 

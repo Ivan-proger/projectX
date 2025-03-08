@@ -11,8 +11,8 @@ class UsersAdmin(admin.ModelAdmin):
 
 @admin.register(Channel)
 class ChannelsAdmin(admin.ModelAdmin):
-    list_display = ("name", "external_id")
-    search_fields = ("name", "external_id")
+    list_display = ("title", "external_id")
+    search_fields = ("title", "external_id")
 
 @admin.register(СategoryChannel)
 class СategoryChannelsAdmin(admin.ModelAdmin):
