@@ -140,7 +140,7 @@ class Comment(models.Model):
         verbose_name_plural = 'Комментарии'
 
     def __str__(self):
-        return f'Комментарии для {self.channel.name}: {self.text[:20]}'
+        return f'Комментарии для {self.channel.title}: {self.text[:20]}'
 
 # Рекламные каналы
 class SuperChannel(models.Model):

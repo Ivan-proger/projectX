@@ -15,6 +15,7 @@ async def update_activity(external_id):
         if await cache.aget(f'ban-{external_id}'):
             return False # Выйти сразу
         # Получаем юзера
+        #todo ЧТО ДЕЛАТЬ КТО НЕ В БАЗЕ
         user = await User.objects.aget(external_id=external_id) 
 
         if user.is_ban:
@@ -176,18 +177,31 @@ def register_handlers(bot: AsyncTeleBot):
             # Финальное добавление канала--Выпадающий список категорий
             elif call.data == "add_channel_precomplite":
                 await callback_add_channel_categories(call, bot) 
+            
+            # Выбор для изменений категорий у канала
+            elif call.data == "callback_change_channel_categories":
+                await callback_change_channel_categories(call, bot)
 
             # страницу переключаем 
             elif call.data.startswith('categories:page'):
                 data = call.data.split(":")
                 page = int(data[2])
-                await callback_add_channel_categories(call, bot, page)
+                if len(data) == 4:
+                    await callback_add_channel_categories(call, bot, page)
+                else:
+                    await callback_change_channel_categories(call, bot, page)    
+                    
             elif call.data.startswith('categories:'):     
                 await callback_categories_add(call, bot)
             elif call.data == 'add_channel_back':
                 await add_channel_back_callback(call, bot)
             
-            
+            # Назад к редактированию
+            elif call.data == "change_channel_back_callback":
+                await change_channel_back_callback(call, bot)
+            # Сохранение категорий внутри их списка редактирования 
+            elif call.data == "complete_change_channel_categories":
+                await complete_change_channel_categories(call, bot)
 
         else:
             await ban_handler(call.message, bot)

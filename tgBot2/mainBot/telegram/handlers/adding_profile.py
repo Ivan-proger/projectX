@@ -1,33 +1,19 @@
 # Основные функции бота, пряма разработка функционала
 import aiohttp
 import io
-import json
 import re
 from PIL import Image, ImageDraw
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.contrib.gis.geos import Point
 
-from mainBot.models import * # импорт всех моделей Django
-from mainBot.telegram.bot import set_user_state, get_message_text, anketa_text
+from mainBot.telegram.bot import set_user_state, get_message_text, anketa_text, category_cache, ban_words_cheking, extract_text, extract_link
 from mainBot.telegram.keyboards import *
 from mainBot.telegram.geo_utils import geocode
-                 
-async def stop_action(message: types.Message, bot: AsyncTeleBot):
-    """ Если пользователь хочет выйти из действия -- True иначе False - не хочет """
-
-    if message.text == await get_message_text("absolute_messages", "stop"):
-        await set_user_state(message.from_user.id, None)
-        await bot.send_message(
-            chat_id=message.chat.id,
-            text=await get_message_text("absolute_messages", "stop"),
-            parse_mode="HTML",
-            reply_markup=await murkup_keboard_stay()
-        ) 
-
-        return True  
-    return False  
+from mainBot.telegram.handlers.msg_to_chat import callback_change_channel_categories
+from mainBot.telegram.handlers.base_handlers import stop_action
+from mainBot.models import * # импорт всех моделей Django
 
 
 #! Процесс создания анкеты:
@@ -67,11 +53,11 @@ async def callback_add_channel_bio(call: types.CallbackQuery, bot: AsyncTeleBot)
             )            
             return True # чтобы ошибок не было   
         # Добавлем в кэш тгк
-        await cache.aset(f'{call.from_user.id}-channel', channel, 60*25)
-        await cache.aset(f'{call.from_user.id}-descriptionChannal', channel.description, 60*25)
+        await cache.aset(f'{call.from_user.id}-channel', channel, settings.CACHE_CREATE)
+        await cache.aset(f'{call.from_user.id}-descriptionChannal', channel.description, settings.CACHE_CREATE)
 
         folowers = await bot.get_chat_member_count(channel.id)       
-        await cache.aset(f'{call.from_user.id}-folowers', folowers, 25*60)
+        await cache.aset(f'{call.from_user.id}-folowers', folowers, settings.CACHE_CREATE)
 
         text = anketa_text(
             channel.title, 
@@ -113,27 +99,30 @@ async def add_channel_img_chat(call: types.CallbackQuery, bot: AsyncTeleBot):
         parse_mode='HTML'
         )
     # Храним id сообщения тг чтобы работать красиво
-    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
-    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)
+    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,settings.CACHE_CREATE)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,settings.CACHE_CREATE)
 
 #* Отправка самому фотографии в чат    
 async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
-    async def replace_line(strings: list, target: str, new_value: str) -> list:
+    async def replace_line(strings: list, target: str, new_value: str) -> int:
         """ Свап фото из всего списка """
         for i, line in enumerate(strings):
             if line == target:
                 strings[i] = new_value
-                return True
+                return i
         strings[0] = new_value # В случаве если ничего не совпало
             
     if message.photo:
         id_imgs = await cache.aget(f'{message.from_user.id}-id_imgs')
-        if id_imgs or len(id_imgs) > 1:  # Меняем в памяти новое изображение из всего стака
+        i = None # Проверяем одна ли фотогрфия или несколько записываем сюда какая из нескольких
+        if not id_imgs:
+            cache.delete(f'{message.from_user.id}-stock_img') 
+        elif id_imgs or len(id_imgs) > 1:  # Меняем в памяти новое изображение из всего стака
             stock_img = await cache.aget(f'{message.from_user.id}-stock_img')
-
-            await replace_line(id_imgs, stock_img, message.photo[0].file_id)
-            
-            await cache.aset(f'{message.from_user.id}-id_imgs', id_imgs, 25*60) # Сохраняем новый лист
+            # Меняем во всем списке тоже
+            i = await replace_line(id_imgs, stock_img, message.photo[0].file_id)
+            # Сохраняем новый лист
+            await cache.aset(f'{message.from_user.id}-id_imgs', id_imgs, settings.CACHE_CREATE) 
             cache.delete(f'{message.from_user.id}-stock_img')  
 
         # Изменияем сообщение в связи с новой информацией об анкете
@@ -142,7 +131,8 @@ async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
             message.from_user.id,
             message.chat.id,
             message.id,
-            message.photo[0].file_id
+            message.photo[0].file_id,
+            0 if not i else i
         )
         if not channel:
             return True # Выходим
@@ -156,7 +146,7 @@ async def add_channel_img_chat_chat(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
-            25*60
+            settings.CACHE_CREATE
             )
         await bot.delete_message(message.chat.id, message.id)
 
@@ -175,7 +165,7 @@ async def add_channel_more_img(call: types.CallbackQuery, bot: AsyncTeleBot):
             )           
             return True 
     else:    
-        await cache.aset(f'{call.from_user.id}-id_imgs', [call.message.photo[0].file_id] ,60*25)
+        await cache.aset(f'{call.from_user.id}-id_imgs', [call.message.photo[0].file_id] ,settings.CACHE_CREATE)
 
     await set_user_state(call.from_user.id, 'add_channel_more_img_chat')
     msg = await bot.send_message(
@@ -185,8 +175,8 @@ async def add_channel_more_img(call: types.CallbackQuery, bot: AsyncTeleBot):
         parse_mode='HTML'
         )
     # Храним id сообщения тг чтобы работать красиво
-    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
-    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)
+    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,settings.CACHE_CREATE)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,settings.CACHE_CREATE)
         
 #* sending in chat    
 async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
@@ -200,7 +190,7 @@ async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
-            25*60
+            settings.CACHE_CREATE
         )
         
     imgs_id = await cache.aget(f'{message.from_user.id}-id_imgs')  
@@ -214,7 +204,7 @@ async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [message.id], 
-            25*60
+            settings.CACHE_CREATE
         )      
     else:
         msg = await bot.send_message(
@@ -226,7 +216,7 @@ async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
-            25*60
+            settings.CACHE_CREATE
             )
         await bot.delete_message(message.chat.id, message.id) 
         return True       
@@ -234,7 +224,7 @@ async def add_channel_more_img_chat(message: types.Message, bot: AsyncTeleBot):
     await cache.aset(
         f'{message.from_user.id}-id_imgs', 
         imgs_id,
-        60*25)
+        settings.CACHE_CREATE)
 
     await bot.edit_message_reply_markup(
         message.chat.id,
@@ -249,7 +239,7 @@ async def add_channel_delete_imgs(call: types.CallbackQuery, bot: AsyncTeleBot):
         call.id, 
         await get_message_text('keyboards', 'add_channel_complite'), 
     )       
-    cache.delete(f'{call.from_user.id}-id_imgs') 
+    cache.delete(f'{call.from_user.id}-id_imgs') # Чистим кэш 
 
     await bot.edit_message_reply_markup(
         call.message.chat.id,
@@ -270,20 +260,28 @@ async def add_channel_swap_imgs(call: types.CallbackQuery, bot: AsyncTeleBot):
         )           
         return True        
      
-    i = call.data.split(':')[1]   
-    id_img = id_imgs[int(i)]
-    
-    await cache.aset(f'{call.from_user.id}-stock_img', id_img ,60*25)
+    i = int(call.data.split(':')[1])   
+    id_img = id_imgs[i]
+    # Кэш на какой картинке мы остановились    
+    await cache.aset(f'{call.from_user.id}-id_img_select', i, settings.CACHE_CREATE)    
+    await cache.aset(f'{call.from_user.id}-stock_img', id_img ,settings.CACHE_CREATE)
+    channel = await cache.aget(f'{call.from_user.id}-channel')
+    if isinstance(channel, dict) or isinstance(channel, types.ChatFullInfo):
+        keyboard = await keyboard_add_chennal(call.from_user.id, i)
+    else:
+        keyboard = await keyboard_for_change_channel(call.from_user.id, i)
 
-    # Создаем объект нового медиа с фото
-    new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
-    # Редактируем медиа в сообщении
-    await bot.edit_message_media(
-        chat_id=call.message.chat.id,
-        message_id=call.message.id, 
-        media=new_media,
-        reply_markup=call.message.reply_markup
-    )
+    if id_img != call.message.photo[0].file_id:
+        # Создаем объект нового медиа с фото
+        new_media = types.InputMediaPhoto(media=id_img, caption=call.message.caption)
+        # Редактируем медиа в сообщении
+        await bot.edit_message_media(
+            chat_id=call.message.chat.id,
+            message_id=call.message.id, 
+            media=new_media,
+            reply_markup=keyboard
+        )
+
 
 # Асинхронная функция для создания изображения с человечком
 async def create_placeholder_avatar(
@@ -434,15 +432,18 @@ async def download_pic_send(channel, bot: AsyncTeleBot, user_id, message, capti0
             parse_mode='HTML'
         )
         await bot.delete_message(message.chat.id, message.id)
-        await cache.aset(f'{str(user_id)}-download-pic', True, 15)
-        await cache.aset(f'{user_id}-pic', msg[0].photo[-1].file_id, 60*30)
+        await cache.aset(f'{str(user_id)}-download-pic', True, 20, store_local=False)
+        await cache.aset(f'{user_id}-pic', msg[0].photo[-1].file_id, settings.CACHE_CREATE)
         cache.delete(f'{message.from_user.id}-id_imgs') # Очистка если что на всякий
+
+        return False
     else:
         await bot.send_message(
             message.chat.id, 
             await get_message_text('errors', 'wait_download'), 
             parse_mode='HTML'
             )       
+        return True
 
 #! Состояние для отправки локации
 async def add_channel_location_callback(call: types.CallbackQuery, bot: AsyncTeleBot):
@@ -456,8 +457,8 @@ async def add_channel_location_callback(call: types.CallbackQuery, bot: AsyncTel
         parse_mode='HTML'
         )
     # Храним id сообщения тг чтобы работать красиво
-    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
-    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)
+    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,settings.CACHE_CREATE)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,settings.CACHE_CREATE)
 
     
 async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
@@ -483,7 +484,7 @@ async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
             await cache.aset(
                 f'{message.from_user.id}-id_botmessage', 
                 await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id] + [message.id], 
-                25*60
+                settings.CACHE_CREATE
                 )              
             return True
     else:
@@ -496,7 +497,7 @@ async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id] + [message.id], 
-            25*60
+            settings.CACHE_CREATE
             )          
 
    # Устанавливаем лимит на 1 поиск раз в 3 секунды
@@ -510,12 +511,12 @@ async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
             parse_mode='HTML'
         )
         # Кэш чтобы не забыть
-        await cache.aset(f'{message.from_user.id}-location', city_data, 25*60)
+        await cache.aset(f'{message.from_user.id}-location', city_data, settings.CACHE_CREATE)
         # Сохраняем сообщение чтобы потом удалять их все 
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id] + [message.id], 
-            25*60
+            settings.CACHE_CREATE
             )
     else:
         # Ничего не найдено
@@ -528,7 +529,7 @@ async def add_channel_location(message: types.Message, bot: AsyncTeleBot):
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id] + [message.id], 
-            25*60
+            settings.CACHE_CREATE
             )       
         
 #* Не согласен                       
@@ -549,17 +550,16 @@ async def add_channel_location_complite(call: types.CallbackQuery, bot: AsyncTel
     """call.data == 'message_complite'"""
 
     # Изменияем сообщение в связи с новой информацией об анкете
-    channel = await change_message(
+    await change_message(
         bot,
         call.from_user.id,
         call.message.chat.id,
         call.message.id
     )
-    if not channel:
-        return True # Выходим
 
-#* Функция для измнения текста после команды в обычный чат (смена описания или картинки поста)
-async def change_message(bot: AsyncTeleBot, user_id: str|int, chat_id: str|int, msg_id: str|int, media_id: str = None) -> types.ChatFullInfo | Channel:
+
+#! Функция для измнения текста после команды в обычный чат (смена описания или картинки поста)
+async def change_message(bot: AsyncTeleBot, user_id: str|int, chat_id: str|int, msg_id: str|int, media_id: str = None, n: int=0) -> types.ChatFullInfo | Channel:
     channel = await cache.aget(f'{user_id}-channel')
     description = await cache.aget(f'{user_id}-descriptionChannal')
 
@@ -568,20 +568,21 @@ async def change_message(bot: AsyncTeleBot, user_id: str|int, chat_id: str|int, 
         return None
     
     chage_mode = True   #* Проверка лежит ли в кэшэ обьъект Django ORM или просто json
-    if isinstance(channel, dict):
+    if isinstance(channel, dict) or isinstance(channel, types.ChatFullInfo):
         chage_mode = False
 
     data_city = await cache.aget(f'{user_id}-location')
     geo = data_city['address'] if data_city else None if not chage_mode else channel.region
-
+    
+    link_text = " " if chage_mode else ('\nt.me/'+str(channel.username))
     caption = anketa_text(
         channel.title, 
         description, 
         await cache.aget(f'{user_id}-folowers'),
         geo
-        ) + "" if chage_mode else f'\nt.me/{channel.username}'
+        ) + link_text
     
-    keyboard = await keyboard_add_chennal(user_id) if not chage_mode else await keyboard_for_change_channel(user_id)
+    keyboard = await keyboard_add_chennal(user_id, n) if not chage_mode else await keyboard_for_change_channel(user_id, n)
 
     if not media_id:
         await bot.edit_message_caption(
@@ -621,12 +622,12 @@ async def add_channel_description_chat(call: types.CallbackQuery, bot: AsyncTele
         parse_mode='HTML'
         )
     # Храним id сообщения тг чтобы работать красиво
-    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,60*25)
-    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,60*25)    
+    await cache.aset(f'{call.from_user.id}-id_message', call.message.id ,settings.CACHE_CREATE)
+    await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id] ,settings.CACHE_CREATE)    
 async def add_channel_description_chat_chat(message: types.Message, bot: AsyncTeleBot):    
     #* Отправка самому описания в чат
     if message.text:
-        await cache.aset(f'{message.from_user.id}-descriptionChannal', message.text, 60*25)
+        await cache.aset(f'{message.from_user.id}-descriptionChannal', message.text, settings.CACHE_CREATE)
         # Изменияем сообщение в связи с новой информацией об анкете
         channel = await change_message(
             bot,
@@ -645,30 +646,19 @@ async def add_channel_description_chat_chat(message: types.Message, bot: AsyncTe
         await cache.aset(
             f'{message.from_user.id}-id_botmessage', 
             await cache.aget(f'{message.from_user.id}-id_botmessage') + [msg.id], 
-            25*60
+            settings.CACHE_CREATE
             )
         await bot.delete_message(message.chat.id, message.id)  
-
-async def category_cache() -> list:
-    category_cache = await cache.aget(f'category_Channel_cache')
-    if not category_cache:   # Кэшируем базу 
-        category_cache = [user async for user in СategoryChannel.objects.all()]
-        await cache.aset(
-            f'category_Channel_cache', 
-            category_cache, 
-            1 if settings.DEBUG else None
-            )
-    return category_cache
         
 #! Выпадающий список хэштегов тех же категорий канала
 async def callback_add_channel_categories(call: types.CallbackQuery, bot: AsyncTeleBot, page=1):
     #call.data == "add_channel_categories"
     list_complite_ids = await cache.aget(f'{call.from_user.id}-list_complite_ids')
 
-    category_cache = await category_cache() 
+    category = await category_cache() 
 
     keyboard = await generate_paginated_keyboard(
-        category_cache, 
+        category, 
         page = page, 
         page_size = 5, 
         callback_prefix = 'categories',
@@ -720,10 +710,15 @@ async def callback_categories_add(call: types.CallbackQuery, bot: AsyncTeleBot):
             list_complite_ids.append(action)
     else:
         list_complite_ids = [action]
-    await cache.aset(f'{call.from_user.id}-list_complite_ids', list_complite_ids, 60*25)
-    await callback_add_channel_categories(call, bot, page)    
+    await cache.aset(f'{call.from_user.id}-list_complite_ids', list_complite_ids, settings.CACHE_CREATE)
+    print(f'\n\n {data} \n{len(data)}\n')
+    if len(data) == 5:
+        # Если это редактирование канала а не добавление нового:
+        await callback_change_channel_categories(call, bot, page)
+    else:    
+        await callback_add_channel_categories(call, bot, page)    
     
-#* Возращение назад к старой лавиатуре    
+#* Возращение назад к старой клавиатуре    
 async def add_channel_back_callback(call: types.CallbackQuery, bot: AsyncTeleBot):
     """call.data == add_channel_back"""
     await bot.edit_message_caption(
@@ -812,14 +807,14 @@ async def add_channel_parsing(message: types.Message, bot: AsyncTeleBot):
             return True # чтобы ошибок не было    
 
         # Сохраняем данные о канале во временное хранилище (Redis или кэш)
-        cache.set(f"{message.from_user.id}-channel", channel, 60*25)
+        cache.set(f"{message.from_user.id}-channel", channel, settings.CACHE_CREATE)
         # Описание в кэш чтобы не было багов если что
-        cache.set(f'{channel.description}-descriptionChannal', 60*25)
+        cache.set(f'{channel.description}-descriptionChannal', settings.CACHE_CREATE)
 
         folowers = await bot.get_chat_member_count(channel.id)       
-        await cache.aset(f'{message.from_user.id}-folowers', folowers, 25*60)
+        await cache.aset(f'{message.from_user.id}-folowers', folowers, settings.CACHE_CREATE)
 
-        await download_pic_send(
+        wait = await download_pic_send(
             channel, 
             bot, 
             message.from_user.id, 
@@ -830,7 +825,8 @@ async def add_channel_parsing(message: types.Message, bot: AsyncTeleBot):
                 folowers
                 ) + f'\nt.me/{channel.username}',
             )
-        await set_user_state(message.from_user.id, None)
+        if wait:
+            await set_user_state(message.from_user.id, None)
     else:
         await bot.send_message(
             chat_id=message.chat.id,
@@ -838,43 +834,6 @@ async def add_channel_parsing(message: types.Message, bot: AsyncTeleBot):
             parse_mode="HTML",
         )
 
-#! Логика филтрации текста
-async def ban_words_cheking(text):
-
-    # Регулярное выражение для поиска ссылок
-    link_pattern = r"(?i)(https?://[^\s<>\"']+|www\d{0,3}\.[^\s<>\"']+|t\.me/[^\s<>\"']+|@[\w\d_]+)"
-    if re.search(link_pattern, text):
-        return await get_message_text("errors", "ban_link")
-
-    ban_words = await cache.aget("ban_words")
-    if not ban_words:
-        # Выгружаем файл с запретками
-        with open("ban_words.json", "r", encoding="utf-8") as file:
-            data = json.load(file)
-            ban_words = set(data.get("prohibited_words", []))  # Используем set для быстрого поиска
-            await cache.aset("ban_words", ban_words, None)       
-
-    # Проверка текста на наличие запрещённых слов
-    found_words = [word for word in ban_words if word.lower() in text.lower()]
-    if found_words:
-        return await get_message_text("errors", "ban_words_text") + f"{', '.join(found_words)}."
-        
-    return None  
-#! Вытаскиваем текст из анкеты   
-async def extract_text(post_text, start_token, end_token):
-    start = post_text.find(start_token)
-    end = post_text.find(end_token, start)
-
-    if start != -1 and end != -1:
-        # Извлекаем описание между маркерами
-        return post_text[start + len(start_token):end].strip()
-    return None   
-async def extract_link(text, start_symbols='t.me/'):
-    # Для получения ссылки в анкете
-    for line in text.splitlines():
-        if line.startswith(start_symbols):
-            return line[len(start_symbols):].split()[0]
-    return None
 
 #! Финальное добавление и проверка в базу
 async def callback_add_channel_complite(call: types.CallbackQuery, bot: AsyncTeleBot):
@@ -947,9 +906,13 @@ async def callback_add_channel_complite(call: types.CallbackQuery, bot: AsyncTel
     await chennal_obj.user.aset(
         [await User.objects.aget(external_id=call.from_user.id)]
         )
-    # Добавляем все тэги(категории)
-    async for category in await category_cache():
-        await chennal_obj.categories.aadd(category)
+    # Добавляем тэги(категории)
+    category_added = []
+    for category in await category_cache():
+        for id in list_complite_ids:
+            if category.id == id:
+                category_added.append(category) 
+    await chennal_obj.categories.aset(category_added) # Финально перезаписываем
 
     if city_data:
         # Добавляем регион/город
@@ -960,6 +923,7 @@ async def callback_add_channel_complite(call: types.CallbackQuery, bot: AsyncTel
     await bot.send_message(
         chat_id=call.message.chat.id,
         text=await get_message_text('general', 'add_complite'),
+        reply_markup=await murkup_keboard_stay(),
         parse_mode="HTML",
     )            
     # Очистка кэша:
@@ -970,12 +934,16 @@ async def callback_add_channel_complite(call: types.CallbackQuery, bot: AsyncTel
     cache.delete(f'{call.from_user.id}-list_complite_ids')
     cache.delete(f'{call.from_user.id}-location')
     cache.delete(f'{call.from_user.id}-stock_img')
+    cache.delete(f'{call.from_user.id}-id_img_select')
 
 
 
 #! !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! test
 async def test_rabbit(message: types.Message, bot: AsyncTeleBot):
-    await cache.aset(f'{message.from_user.id}-premium', False, 60*2+1)
+    await cache.aset(f'{message.from_user.id}-premium', False, 60*2+1, False)
+
+    cache.clear() #! ЧИстим тест
+
     return True
     from mainBot.rabbitmq_service import rabbitmq_client
     text = message.text.split()[1]

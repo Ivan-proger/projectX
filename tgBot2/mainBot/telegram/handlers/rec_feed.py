@@ -2,9 +2,6 @@
 Лента рекомендаций и ее создание выдача пользователю, ее прокрутка
 """
 
-import aiohttp
-import io
-import json
 import string
 import random
 from telebot.async_telebot import AsyncTeleBot
@@ -15,11 +12,10 @@ from django.contrib.gis.geos import Point
 from django.db.models import Q, F
 from django.contrib.gis.measure import D
 
-from mainBot.models import * # импорт всех моделей Django
 from mainBot.telegram.bot import set_user_state, get_message_text, anketa_text
 from mainBot.telegram.keyboards import *
-from mainBot.telegram.geo_utils import geocode
-from mainBot.telegram.handlers.adding_profile import stop_action
+from mainBot.telegram.handlers.base_handlers import stop_action
+from mainBot.models import * # импорт всех моделей Django
 
 
 # Закодирование id канала чтобы нельзя было подсмотреть через кнопку 
@@ -127,7 +123,7 @@ async def recommendations_feed(message: types.Message, bot: AsyncTeleBot, user_i
     await cache.aset(f'{user_id}-recommendations', recommendations, 60*60)
     
     caption = anketa_text(
-        channel.name,
+        channel.title,
         channel.description,
         channel.folowers,
         channel.region,

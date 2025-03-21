@@ -51,7 +51,7 @@ services:
     build: .
     restart: always
     command: >
-      sh -c " sleep 17 &&
+      sh -c " sleep 2 &&
       python manage.py makemigrations &&
       python manage.py migrate &&
       python manage.py webhookstart &&
@@ -59,12 +59,13 @@ services:
       uvicorn tgBot2.asgi:application --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - ./txt_files:/tgBot2 # python manage.py runserver 0.0.0.0:8000 
-      - .:/app              # Добавляем том для кода, чтобы изменения применялись сразу
+      - ./:/app              # Добавляем том для кода, чтобы изменения применялись сразу
     ports:                  # uvicorn tgBot2.asgi:application --host 0.0.0.0 --port 8000"
       - "8000:8000"         # gunicorn --workers 3 --bind 0.0.0.0:8000 tgBot2.wsgi:application"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - SOME_VAR=${y1:-default_value}
 
 
 # Определяем том для PostgreSQL

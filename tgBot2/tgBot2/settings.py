@@ -97,12 +97,36 @@ DATABASES = {
 # Cache
 CACHES = {
     'default': {
+        'BACKEND': 'mainBot.caches.dual_cache.DualCacheBackend',
+        'LOCATION': '',
+        'OPTIONS': {
+            'REDIS_CACHE_ALIAS': 'redis',    # алиас для быстрого Redis-кэша
+            'REDIS_TIMEOUT': 3600,           # 1 час для Redis
+            'LOCAL_CACHE_ALIAS': 'local',    # алиас для локального (например, файлового) кэша
+            'LOCAL_TIMEOUT': 3 * 24 * 3600,    # 3 дня для локального кэша
+        },
+    },
+    # Redis-кэш, используемый в качестве быстрого хранилища
+    'redis': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://redis:6379/1',  # redis - это имя контейнера
-    }
+        'LOCATION': 'redis://redis:6379/1',  # настройка подключения к Redis
+    },
+    # Локальный файловый кэш для долговременного хранения
+    'local': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/path/to/your/local/cache',  # укажите путь к директории, где будет храниться кэш
+    },
 }
+
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+#         'LOCATION': 'redis://redis:6379/1',  # redis - это имя контейнера
+#     }
+# }
 CACHE_TTL = 60 * 60 * 5  # Время жизни кэша 5 часов
- 
+CACHE_CREATE = 60*60     # Время хранения данных вовремя создания поста
+
 #! Celery
 # from celery.schedules import crontab
 
