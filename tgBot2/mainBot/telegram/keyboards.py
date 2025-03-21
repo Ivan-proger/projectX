@@ -2,7 +2,8 @@ from telebot.types import *
 from mainBot.models import СategoryComplaint, Channel
 from django.core.cache import cache
 from django.conf import settings
-from .bot import  get_message_text
+
+from mainBot.midleware.text_tools import get_message_text
 
 
 async def complite_and_close():

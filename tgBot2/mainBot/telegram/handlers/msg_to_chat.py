@@ -5,7 +5,8 @@ from telebot import types
 from django.core.cache import cache
 
 
-from mainBot.telegram.bot import get_message_text, anketa_text, category_cache, ban_words_cheking, extract_text
+from mainBot.midleware.cache_tools import category_cache
+from mainBot.midleware.text_tools import get_message_text, anketa_text, ban_words_cheking, extract_text
 from mainBot.telegram.keyboards import *
 from mainBot.telegram.handlers.rec_feed import recommendations_feed
 

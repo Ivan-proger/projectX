@@ -12,7 +12,8 @@ from django.contrib.gis.geos import Point
 from django.db.models import Q, F
 from django.contrib.gis.measure import D
 
-from mainBot.telegram.bot import set_user_state, get_message_text, anketa_text
+from mainBot.midleware.cache_tools import set_user_state
+from mainBot.midleware.text_tools import get_message_text, anketa_text
 from mainBot.telegram.keyboards import *
 from mainBot.telegram.handlers.base_handlers import stop_action
 from mainBot.models import * # импорт всех моделей Django

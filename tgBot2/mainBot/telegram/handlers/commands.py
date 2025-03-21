@@ -7,7 +7,9 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 #from django.core.cache import cache
 
-from mainBot.telegram.bot import get_user_state, set_user_state, get_message_text, anketa_text
+from mainBot.midleware.cache_tools import set_user_state
+from mainBot.midleware.text_tools import get_message_text
+
 from mainBot.telegram.keyboards import *
 from mainBot.models import * # импорт всех моделей Django
 

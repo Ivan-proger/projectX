@@ -2,7 +2,9 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot import types
 
 from mainBot.telegram.keyboards import murkup_keboard_stay
-from mainBot.telegram.bot import set_user_state, get_message_text
+
+from mainBot.midleware.cache_tools import set_user_state
+from mainBot.midleware.text_tools import get_message_text
 
 #! Общая функция для стопа
 async def stop_action(message: types.Message, bot: AsyncTeleBot):

@@ -5,6 +5,7 @@ from mainBot.telegram.handlers.rec_feed import *
 from mainBot.telegram.handlers.adding_profile import *
 from mainBot.telegram.handlers.commands import *
 from mainBot.telegram.handlers.msg_to_chat import *
+from mainBot.midleware.cache_tools import get_user_state, set_user_state
 from mainBot.models import *
 
 #! Oбновление последней активности
