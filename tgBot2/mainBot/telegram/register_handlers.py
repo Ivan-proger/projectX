@@ -9,26 +9,38 @@ from mainBot.midleware.cache_tools import get_user_state, set_user_state
 from mainBot.models import *
 
 #! Oбновление последней активности
-async def update_activity(external_id):
-    user_last_activity = await cache.aget(f'activity-{external_id}')
+async def update_activity(external_id, message: types.Message, bot: AsyncTeleBot):
+    user_last_activity = await caches['redis'].aget(f'activity-{external_id}')
     current_date = timezone.now()
+    print(f'\n\n {user_last_activity} \n\n')
     if not user_last_activity:
-        if await cache.aget(f'ban-{external_id}'):
+        if await caches['redis'].aget(f'ban-{external_id}'):
             return False # Выйти сразу
         # Получаем юзера
         #todo ЧТО ДЕЛАТЬ КТО НЕ В БАЗЕ
-        user = await User.objects.aget(external_id=external_id) 
+               
+        user = await User.objects.filter(external_id=external_id).afirst()
+        print(f'\n\n {user} \n\n')
+        if not user:
+            await bot.send_message(
+                chat_id = message.chat.id,
+                text=await get_message_text("errors", "user_not_found"),
+                parse_mode='HTML'
+            )
+            print('\n\n НУ Я НЕ НАШЕЛ АЛОО \n\n')
+            return False
 
         if user.is_ban:
-            await cache.aset(f'ban-{external_id}', True, 60*60*2)
+            await caches['redis'].aset(f'ban-{external_id}', True, 60*60*2)
+            await ban_handler(message, bot)
             return False # Выйти сразу
         user_last_activity = user.last_activity 
 
         # Премиум
         if user.premium:
-            await cache.aset(f'{external_id}-premium', True, 60*2+1)
+            await caches['redis'].aset(f'{external_id}-premium', True, 60*2+1)
 
-        await cache.aset(f'activity-{external_id}', current_date, 60*2) 
+        await caches['redis'].aset(f'activity-{external_id}', current_date, 60*2) 
         if user_last_activity.day != current_date.day: #Собираем статистику уникальных пользователей за день
             # Получение записи по текущей дате
             service_usage, create = await ServiceUsage.objects.aget_or_create(
@@ -58,7 +70,7 @@ def register_handlers(bot: AsyncTeleBot):
 
     #* Обработчик просто сообщений
     async def pass_function(message: types.Message, bot: AsyncTeleBot):
-        user = await update_activity(message.from_user.id)
+        user = await update_activity(message.from_user.id, message, bot)
         if user:
             state = await get_user_state(message.from_user.id)
             if not state:
@@ -88,8 +100,7 @@ def register_handlers(bot: AsyncTeleBot):
                     await add_channel_parsing(message, bot)
                 elif state == "add_channel_location_callback":
                     await add_channel_location(message, bot)
-        else:
-            await ban_handler(message, bot)
+
     bot.register_message_handler(
         pass_function, 
         pass_bot=True, 
@@ -99,7 +110,7 @@ def register_handlers(bot: AsyncTeleBot):
     
     #* Колбэк оbработчик
     async def callback_pass_function(call: types.CallbackQuery, bot: AsyncTeleBot):
-        user = await update_activity(call.from_user.id)
+        user = await update_activity(call.from_user.id, call.message, bot)
         if user:
             # Like/Dislike
             if call.data.startswith("dislike_post+"):
@@ -204,6 +215,4 @@ def register_handlers(bot: AsyncTeleBot):
             elif call.data == "complete_change_channel_categories":
                 await complete_change_channel_categories(call, bot)
 
-        else:
-            await ban_handler(call.message, bot)
     bot.register_callback_query_handler(callback_pass_function, pass_bot=True, func=lambda call: True)
