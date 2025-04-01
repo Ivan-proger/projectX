@@ -12,22 +12,19 @@ from mainBot.models import *
 async def update_activity(external_id, message: types.Message, bot: AsyncTeleBot):
     user_last_activity = await caches['redis'].aget(f'activity-{external_id}')
     current_date = timezone.now()
-    print(f'\n\n {user_last_activity} \n\n')
+
     if not user_last_activity:
         if await caches['redis'].aget(f'ban-{external_id}'):
             return False # Выйти сразу
         # Получаем юзера
-        #todo ЧТО ДЕЛАТЬ КТО НЕ В БАЗЕ
-               
         user = await User.objects.filter(external_id=external_id).afirst()
-        print(f'\n\n {user} \n\n')
+
         if not user:
             await bot.send_message(
                 chat_id = message.chat.id,
                 text=await get_message_text("errors", "user_not_found"),
                 parse_mode='HTML'
             )
-            print('\n\n НУ Я НЕ НАШЕЛ АЛОО \n\n')
             return False
 
         if user.is_ban:
@@ -74,6 +71,8 @@ def register_handlers(bot: AsyncTeleBot):
         if user:
             state = await get_user_state(message.from_user.id)
             if not state:
+                if message.text == await get_message_text("absolute_messages", "stop"):
+                    await stop_action(message, bot)
                 await check_message_comannds(message, bot, user)
             else:
                 if await stop_action(message, bot):
@@ -113,9 +112,9 @@ def register_handlers(bot: AsyncTeleBot):
         user = await update_activity(call.from_user.id, call.message, bot)
         if user:
             # Like/Dislike
-            if call.data.startswith("dislike_post+"):
+            if call.data.startswith("dislike_post:"):
                 await callback_dislike(call, bot, user)
-            elif call.data.startswith("like_post+"):
+            elif call.data.startswith("like_post:"):
                 await callback_like(call, bot, user) 
             
             # Переключение фотографий
@@ -123,11 +122,11 @@ def register_handlers(bot: AsyncTeleBot):
                 await swap_imgs(call, bot)
 
             # Статус 'comment'
-            elif call.data.startswith('comment_post+'):   
+            elif call.data.startswith('comment_post:'):   
                 await  comment_status(call, bot)
 
             # Отправить жалобу
-            elif call.data.startswith("complaint_post+"):
+            elif call.data.startswith("complaint_post:"):
                 await complite_category_collback(call, bot)
             elif call.data.startswith("complite_tags:"): # Реакцию на кнопку только
                 await complite_category_choice(call, bot)

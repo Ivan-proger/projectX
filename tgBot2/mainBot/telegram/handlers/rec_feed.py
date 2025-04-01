@@ -206,7 +206,7 @@ async def callback_dislike(call: types.CallbackQuery, bot: AsyncTeleBot, user: U
         reply_markup=None
     )    
 
-    hash_code = call.data.split('+')[1]
+    hash_code = call.data.split(":")[1]
     channel_id = await decode_base62(hash_code)
 
     # Обновляем
@@ -218,17 +218,17 @@ async def callback_dislike(call: types.CallbackQuery, bot: AsyncTeleBot, user: U
 async def callback_like(call: types.CallbackQuery, bot: AsyncTeleBot, user: User = None):
     """ call.data.startswith("like_post-") """
 
-    hash_code = call.data.split('+')[1]
-    channel_id = await decode_base62(hash_code)
+    code = call.data.split(":")[1]
+    hash_code = call.data.split(":")[2]
+    channel_id = await decode_base62(code)
 
     # Обновляем
     await Channel.objects.filter(external_id=channel_id).aupdate(likes=F("likes") + 1)
 
     keyboard = types.InlineKeyboardMarkup().add(
-        types.InlineKeyboardButton(
-            "Ссылка", 
-            url=f't.me/{(await bot.get_chat(channel_id)).username}'
-            )
+        InlineKeyboardButton("Ссылка", url=f't.me/{(await bot.get_chat(channel_id)).username}'),
+        # Жалоба
+        InlineKeyboardButton("⚠️", callback_data=f'complaint_post:{code}:{hash_code}')
     )
     # Убираем клавиатуру чтобы больше не нажимал
     await bot.edit_message_reply_markup(
@@ -249,7 +249,10 @@ async def comment_status(call: types.CallbackQuery, bot: AsyncTeleBot):
         reply_markup=await stop_message(),
         parse_mode='HTML'
     )
-    hash_code = call.data.split("+")[2]
+    
+    hash_code = call.data.split(":")[2]
+    code = call.data.split(":")[1]
+
     # Ставим в кэш наш код канала
     await cache.aset(f'{call.from_user.id}-comment-tg', hash_code, 30*60)
     await cache.aset(f'{call.from_user.id}-id_botmessage', [msg.id], 30*60)
@@ -258,8 +261,9 @@ async def comment_status(call: types.CallbackQuery, bot: AsyncTeleBot):
     keyboard = types.InlineKeyboardMarkup().add(
         types.InlineKeyboardButton(
             "Ссылка", 
-            url=f't.me/{(await bot.get_chat(await decode_base62(call.data.split("+")[1]))).username}'
-            )
+            url=f't.me/{(await bot.get_chat(await decode_base62(call.data.split(":")[1]))).username}'
+            ),
+        InlineKeyboardButton("⚠️", callback_data=f'complaint_post:{code}:{hash_code}')
     )
     # Убираем клавиатуру чтобы больше не нажимал
     await bot.edit_message_reply_markup(
@@ -330,7 +334,7 @@ async def complite_category_collback(call: types.CallbackQuery, bot: AsyncTeleBo
     await bot.edit_message_reply_markup(
         call.message.chat.id,
         call.message.id,
-        reply_markup=await complite_tags_keybord(call.data.split("+")[1], call.data.split("+")[2])
+        reply_markup=await complite_tags_keybord(call.data.split(":")[1], call.data.split(":")[2])
         )    
 
 # Назад в оценку

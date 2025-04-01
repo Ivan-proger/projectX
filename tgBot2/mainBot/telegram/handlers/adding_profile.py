@@ -713,7 +713,6 @@ async def callback_categories_add(call: types.CallbackQuery, bot: AsyncTeleBot):
     else:
         list_complite_ids = [action]
     await cache.aset(f'{call.from_user.id}-list_complite_ids', list_complite_ids, settings.CACHE_CREATE)
-    print(f'\n\n {data} \n{len(data)}\n')
     if len(data) == 5:
         # Если это редактирование канала а не добавление нового:
         await callback_change_channel_categories(call, bot, page)

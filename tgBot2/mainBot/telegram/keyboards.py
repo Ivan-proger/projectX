@@ -218,13 +218,13 @@ async def keyboard_post(hash: str, hash_id_channel: str, n: int = 0):
 
     keyboard.add( 
         # Лайка
-        InlineKeyboardButton("💖", callback_data=f'like_post+{hash}'),
+        InlineKeyboardButton("💖", callback_data=f'like_post:{hash}:{hash_id_channel}'),
         # Коментарий                           
-        InlineKeyboardButton("💬", callback_data=f'comment_post+{hash}+{hash_id_channel}'),
+        InlineKeyboardButton("💬", callback_data=f'comment_post:{hash}:{hash_id_channel}'),
         # Дизлайк                           
-        InlineKeyboardButton("👎", callback_data=f'dislike_post+{hash}'),                                   
+        InlineKeyboardButton("👎", callback_data=f'dislike_post:{hash}'),                                   
         # Жалоба
-        InlineKeyboardButton("⚠️", callback_data=f'complaint_post+{hash}+{hash_id_channel}'),         
+        InlineKeyboardButton("⚠️", callback_data=f'complaint_post:{hash}:{hash_id_channel}'),         
     ) 
 
     return keyboard 
